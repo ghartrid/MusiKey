@@ -1,0 +1,328 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif;
+  background: #1a1a2e;
+  color: #ececec;
+  overflow: hidden;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+header {
+  background: linear-gradient(135deg, #16213e 0%, #0f3460 100%);
+  padding: 16px 24px;
+  border-bottom: 2px solid #e94560;
+  display: flex;
+  align-items: baseline;
+  gap: 16px;
+}
+
+.logo {
+  font-size: 24px;
+  font-weight: 700;
+  color: #e94560;
+  letter-spacing: 3px;
+}
+
+.subtitle {
+  font-size: 12px;
+  color: #888;
+  letter-spacing: 1px;
+}
+
+main {
+  flex: 1;
+  padding: 16px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  overflow-y: auto;
+}
+
+.controls {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.input-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.input-group.small {
+  flex: 1;
+}
+
+.input-group label {
+  font-size: 11px;
+  color: #888;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.input-row {
+  display: flex;
+  gap: 8px;
+}
+
+.settings {
+  gap: 16px;
+}
+
+input[type="text"],
+input[type="password"],
+select {
+  background: #16213e;
+  border: 1px solid #0f3460;
+  color: #ececec;
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 14px;
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+input[type="text"]:focus,
+input[type="password"]:focus,
+select:focus {
+  border-color: #e94560;
+}
+
+select {
+  flex: 1;
+  cursor: pointer;
+}
+
+input[type="text"] {
+  flex: 1;
+}
+
+input[type="range"] {
+  width: 100%;
+  accent-color: #e94560;
+  cursor: pointer;
+}
+
+.button-row {
+  display: flex;
+  gap: 8px;
+}
+
+.btn {
+  padding: 10px 20px;
+  border: none;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  flex: 1;
+  letter-spacing: 0.5px;
+}
+
+.btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+  filter: brightness(1.1);
+}
+
+.btn:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+.btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.btn-primary {
+  background: #e94560;
+  color: white;
+}
+
+.btn-accent {
+  background: #0f3460;
+  color: white;
+}
+
+.btn-secondary {
+  background: #16213e;
+  color: #ececec;
+  border: 1px solid #0f3460;
+}
+
+.btn-small {
+  padding: 6px 14px;
+  font-size: 12px;
+  flex: 0;
+  background: #16213e;
+  color: #ececec;
+  border: 1px solid #0f3460;
+  border-radius: 6px;
+}
+
+.btn-danger {
+  border-color: #ff6b6b;
+  color: #ff6b6b;
+}
+
+.btn-danger:hover:not(:disabled) {
+  background: #ff6b6b;
+  color: white;
+}
+
+.status-bar {
+  background: #16213e;
+  border-radius: 8px;
+  padding: 10px 16px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.status-text {
+  font-size: 13px;
+  font-weight: 500;
+  transition: color 0.3s;
+}
+
+.status-info {
+  display: flex;
+  gap: 20px;
+  font-size: 11px;
+  color: #888;
+}
+
+.status-info span {
+  white-space: nowrap;
+}
+
+.analysis-panel {
+  background: #16213e;
+  border-radius: 8px;
+  padding: 10px 16px;
+  min-height: 0;
+}
+
+.analysis-panel:empty {
+  display: none;
+}
+
+.analysis-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 4px;
+  font-size: 12px;
+}
+
+.analysis-row span:first-child {
+  width: 70px;
+  color: #888;
+}
+
+.analysis-row span:last-child {
+  width: 36px;
+  text-align: right;
+  font-family: monospace;
+}
+
+.bar-bg {
+  flex: 1;
+  height: 8px;
+  background: #0f3460;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.bar-fill {
+  height: 100%;
+  border-radius: 4px;
+  transition: width 0.5s ease;
+}
+
+.analysis-overall {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 8px;
+  padding-top: 6px;
+  border-top: 1px solid #0f3460;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.valid {
+  color: #4ecca3;
+}
+
+.invalid {
+  color: #ff6b6b;
+}
+
+.visualizer-container,
+.piano-container {
+  background: #16213e;
+  border-radius: 8px;
+  padding: 8px;
+  display: flex;
+  justify-content: center;
+}
+
+canvas {
+  border-radius: 4px;
+}
+
+.bottom-bar {
+  display: flex;
+  gap: 8px;
+  padding-top: 4px;
+  align-items: center;
+}
+
+.bottom-bar .btn-small {
+  flex: 0 0 auto;
+}
+
+/* Passphrase strength meter */
+.strength-meter {
+  height: 4px;
+  background: #0f3460;
+  border-radius: 2px;
+  overflow: hidden;
+  margin-top: 4px;
+}
+
+.strength-bar {
+  height: 100%;
+  width: 0;
+  border-radius: 2px;
+  transition: width 0.3s, background 0.3s;
+}
+
+.strength-label {
+  font-size: 10px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  transition: color 0.3s;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: #1a1a2e;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #0f3460;
+  border-radius: 3px;
+}

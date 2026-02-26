@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'">
+  <title>MusiKey</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header>
+    <div class="logo">&#9835; MUSIKEY</div>
+    <div class="subtitle">Musical Entropy Authentication</div>
+  </header>
+
+  <main>
+    <section class="controls">
+      <div class="input-group">
+        <label for="userList">User</label>
+        <div class="input-row">
+          <select id="userList"></select>
+          <input type="text" id="username" placeholder="New username">
+        </div>
+      </div>
+
+      <div class="input-group">
+        <label for="passphrase">Passphrase</label>
+        <input type="password" id="passphrase" placeholder="Enter passphrase (12+ chars)">
+        <div class="strength-meter">
+          <div class="strength-bar" id="strengthBar"></div>
+        </div>
+        <span class="strength-label" id="strengthLabel"></span>
+      </div>
+
+      <div class="input-row settings">
+        <div class="input-group small">
+          <label for="scale">Scale</label>
+          <select id="scale"></select>
+        </div>
+        <div class="input-group small">
+          <label for="songLength">Length: <span id="lengthLabel">64</span></label>
+          <input type="range" id="songLength" min="32" max="256" value="64" step="8">
+        </div>
+      </div>
+
+      <div class="button-row">
+        <button id="enrollBtn" class="btn btn-primary">Enroll</button>
+        <button id="authBtn" class="btn btn-accent">Authenticate</button>
+        <button id="playBtn" class="btn btn-secondary">Play</button>
+      </div>
+    </section>
+
+    <section class="status-bar">
+      <div id="status" class="status-text">Ready</div>
+      <div class="status-info">
+        <span>Entropy: <span id="entropy">-</span> bits</span>
+        <span>Attempts: <span id="attempts">-</span></span>
+      </div>
+    </section>
+
+    <section class="analysis-panel" id="analysis"></section>
+
+    <section class="visualizer-container">
+      <canvas id="visualizer" width="660" height="80"></canvas>
+    </section>
+
+    <section class="piano-container">
+      <canvas id="piano" width="660" height="70"></canvas>
+    </section>
+
+    <section class="bottom-bar">
+      <button id="exportBtn" class="btn btn-small">Export</button>
+      <button id="importBtn" class="btn btn-small">Import</button>
+      <button id="deleteBtn" class="btn btn-small btn-danger">Delete User</button>
+    </section>
+  </main>
+
+  <script src="renderer.js"></script>
+</body>
+</html>
