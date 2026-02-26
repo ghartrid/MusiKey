@@ -1,0 +1,16 @@
+{
+  "name": "musikey-core",
+  "version": "1.0.0",
+  "description": "Musical entropy authentication engine — encrypted songs replace passwords",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "test": "node dist/test.js"
+  },
+  "keywords": ["authentication", "encryption", "music", "scrypt", "aes-gcm", "pbkdf2"],
+  "license": "MIT",
+  "devDependencies": {
+    "typescript": "^5.3.0"
+  }
+}

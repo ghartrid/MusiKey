@@ -1,0 +1,19 @@
+{
+  "name": "musikey-cli",
+  "version": "1.0.0",
+  "description": "MusiKey command-line authentication tool",
+  "bin": {
+    "musikey": "dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/cli.js"
+  },
+  "dependencies": {
+    "musikey-core": "file:../musikey-core"
+  },
+  "devDependencies": {
+    "typescript": "^5.3.0",
+    "@types/node": "^20.0.0"
+  }
+}

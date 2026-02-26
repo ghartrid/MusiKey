@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>MusiKey WASM Demo</title>
+  <style>
+    body { font-family: system-ui; max-width: 600px; margin: 40px auto; padding: 0 20px; background: #1a1a2e; color: #e0e0e0; }
+    h1 { color: #00d4ff; }
+    input, button { padding: 10px; margin: 5px 0; border-radius: 6px; border: 1px solid #333; background: #16213e; color: #e0e0e0; font-size: 14px; }
+    input { width: 100%; box-sizing: border-box; }
+    button { cursor: pointer; background: #0f3460; border-color: #00d4ff; }
+    button:hover { background: #00d4ff; color: #000; }
+    #log { background: #0a0a1a; padding: 15px; border-radius: 8px; font-family: monospace; white-space: pre-wrap; min-height: 200px; margin-top: 20px; font-size: 13px; }
+    .success { color: #00ff88; }
+    .error { color: #ff4444; }
+    .info { color: #00d4ff; }
+  </style>
+</head>
+<body>
+  <h1>MusiKey WASM Demo</h1>
+  <p>Musical Entropy Authentication — running entirely in your browser.</p>
+  <input id="userId" placeholder="User ID" value="testuser">
+  <input id="passphrase" type="password" placeholder="Passphrase (12+ chars, mixed case/digits/symbols)">
+  <div style="margin: 10px 0;">
+    <button onclick="enroll()">Enroll</button>
+    <button onclick="authenticate()">Authenticate</button>
+    <button onclick="generate()">Generate Song</button>
+  </div>
+  <div id="log"></div>
+
+  <script src="dist/musikey-wasm.js"></script>
+  <script>
+    const log = document.getElementById('log');
+    const mk = new MusiKeyWasm({ preferredScale: 4, songLength: 64, scrambleIterations: 100000 });
+    const credentials = {};
+
+    function appendLog(msg, cls) {
+      const span = document.createElement('span');
+      span.className = cls || '';
+      span.textContent = msg + '\n';
+      log.appendChild(span);
+      log.scrollTop = log.scrollHeight;
+    }
+
+    async function enroll() {
+      const userId = document.getElementById('userId').value;
+      const pass = document.getElementById('passphrase').value;
+      if (!userId || !pass) { appendLog('Enter user ID and passphrase', 'error'); return; }
+      if (pass.length < 12) { appendLog('Passphrase must be 12+ characters', 'error'); return; }
+
+      appendLog(`Enrolling "${userId}"...`, 'info');
+      const start = performance.now();
+      const cred = await mk.enroll(userId, pass);
+      const elapsed = ((performance.now() - start) / 1000).toFixed(1);
+
+      if (!cred) { appendLog('Enrollment failed', 'error'); return; }
+      credentials[userId] = cred;
+      appendLog(`Enrolled in ${elapsed}s — scale=${cred.scale}, root=${cred.rootNote}`, 'success');
+    }
+
+    async function authenticate() {
+      const userId = document.getElementById('userId').value;
+      const pass = document.getElementById('passphrase').value;
+      const cred = credentials[userId];
+      if (!cred) { appendLog(`User "${userId}" not enrolled`, 'error'); return; }
+
+      appendLog(`Authenticating "${userId}"...`, 'info');
+      const start = performance.now();
+      const result = await mk.authenticate(cred, pass);
+      const elapsed = ((performance.now() - start) / 1000).toFixed(1);
+
+      if (result.success) {
+        appendLog(`Authenticated in ${elapsed}s — musicality=${result.analysis.overallMusicality.toFixed(3)}, entropy=${result.song.entropyBits} bits`, 'success');
+      } else {
+        appendLog(`Failed (${elapsed}s): ${result.error}`, 'error');
+        if (result.destroyed) { delete credentials[userId]; appendLog('CREDENTIAL DESTROYED', 'error'); }
+      }
+    }
+
+    function generate() {
+      const song = mk.generateSong();
+      const analysis = mk.analyze(song);
+      appendLog(`Song: ${song.eventCount} notes, ${song.entropyBits} bits entropy, ${song.tempo} BPM, musicality=${analysis.overallMusicality.toFixed(3)}`, 'info');
+    }
+
+    appendLog('MusiKey WASM ready. Enter credentials and click Enroll.', 'info');
+  </script>
+</body>
+</html>
