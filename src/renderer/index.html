@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self' http://127.0.0.1:9817">
   <title>MusiKey</title>
   <link rel="stylesheet" href="styles.css">
 </head>
@@ -68,12 +68,168 @@
       <canvas id="piano" width="660" height="70"></canvas>
     </section>
 
+    <section class="fingerprint-section" id="fingerprintSection" style="display:none;">
+      <div class="fingerprint-header">
+        <span class="fingerprint-title">Song Fingerprint</span>
+        <span class="fingerprint-label" id="fingerprintLabel"></span>
+      </div>
+      <canvas id="fingerprint" width="108" height="108"></canvas>
+    </section>
+
+    <section class="mfa-section" id="mfaSection" style="display:none;">
+      <div class="mfa-header">Multi-Factor Authentication</div>
+      <div class="mfa-options">
+        <label class="mfa-option">
+          <input type="checkbox" id="mfaChallengeResponse"> Challenge-Response
+        </label>
+        <label class="mfa-option">
+          <input type="checkbox" id="mfaTotp"> TOTP Code
+        </label>
+      </div>
+      <div class="totp-display" id="totpDisplay" style="display:none;">
+        <span class="totp-code" id="totpCode">------</span>
+        <div class="totp-timer">
+          <div class="totp-timer-bar" id="totpTimerBar"></div>
+        </div>
+        <span class="totp-countdown" id="totpCountdown">30s</span>
+      </div>
+    </section>
+
+    <section class="auth-level-section">
+      <div class="input-group small">
+        <label for="authLevel">Security Level</label>
+        <select id="authLevel">
+          <option value="1">Basic (decrypt only)</option>
+          <option value="2" selected>Standard (+ musicality)</option>
+          <option value="3">High (+ fingerprint confirm)</option>
+        </select>
+      </div>
+    </section>
+
+    <section class="services-section" id="servicesSection" style="display:none;">
+      <div class="services-header">
+        <span class="services-title">Services</span>
+        <span class="service-badge" id="serviceBadge">0</span>
+        <button id="addServiceBtn" class="btn btn-small" style="margin-left:auto;">Add Service</button>
+        <button id="manualChallengeBtn" class="btn btn-small">Sign Challenge</button>
+      </div>
+      <div class="service-list" id="serviceList"></div>
+    </section>
+
     <section class="bottom-bar">
       <button id="exportBtn" class="btn btn-small">Export</button>
       <button id="importBtn" class="btn btn-small">Import</button>
+      <button id="syncExportBtn" class="btn btn-small">Sync Export</button>
+      <button id="syncImportBtn" class="btn btn-small">Sync Import</button>
+      <button id="auditBtn" class="btn btn-small">Audit</button>
       <button id="deleteBtn" class="btn btn-small btn-danger">Delete User</button>
     </section>
   </main>
+
+  <!-- Auth success overlay -->
+  <div id="authOverlay" class="auth-overlay" style="display:none;">
+    <div class="auth-overlay-content">
+      <div class="auth-overlay-icon">&#9835;</div>
+      <div class="auth-overlay-title">Authentication Successful</div>
+      <div class="auth-overlay-subtitle" id="authOverlayUser"></div>
+      <canvas id="authOverlayVis" width="200" height="40"></canvas>
+      <div class="auth-overlay-fingerprint">
+        <canvas id="authOverlayFingerprint" width="108" height="108"></canvas>
+      </div>
+      <button id="authOverlayDismiss" class="btn btn-primary" disabled>Dismiss</button>
+    </div>
+  </div>
+
+  <!-- Challenge dialog -->
+  <div id="challengeDialog" class="challenge-dialog" style="display:none;">
+    <div class="challenge-content">
+      <div class="challenge-title">Musical Challenge</div>
+      <div class="challenge-question" id="challengeQuestion"></div>
+      <div class="challenge-note">Listen to the passage, then answer:</div>
+      <div class="challenge-options" id="challengeOptions"></div>
+    </div>
+  </div>
+
+  <!-- TOTP input dialog -->
+  <div id="totpDialog" class="challenge-dialog" style="display:none;">
+    <div class="challenge-content">
+      <div class="challenge-title">TOTP Verification</div>
+      <div class="challenge-question">Enter your 6-digit code:</div>
+      <input type="text" id="totpInput" class="totp-input" maxlength="6" placeholder="000000">
+      <button id="totpSubmit" class="btn btn-primary">Verify</button>
+    </div>
+  </div>
+
+  <!-- Fingerprint confirmation dialog -->
+  <div id="fingerprintDialog" class="challenge-dialog" style="display:none;">
+    <div class="challenge-content">
+      <div class="challenge-title">Fingerprint Verification</div>
+      <div class="challenge-question">Does this fingerprint match your enrolled credential?</div>
+      <canvas id="fingerprintDialogCanvas" width="144" height="144"></canvas>
+      <div class="challenge-options">
+        <button id="fpConfirm" class="btn btn-primary">Confirm Match</button>
+        <button id="fpDeny" class="btn btn-danger">Reject</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Audit log dialog -->
+  <div id="auditDialog" class="challenge-dialog" style="display:none;">
+    <div class="challenge-content" style="max-width:500px;max-height:70vh;overflow-y:auto;">
+      <div class="challenge-title">Audit Log</div>
+      <div id="auditContent" style="text-align:left;"></div>
+      <button id="auditClose" class="btn btn-primary">Close</button>
+    </div>
+  </div>
+
+  <!-- Service registration dialog -->
+  <div id="serviceRegDialog" class="challenge-dialog" style="display:none;">
+    <div class="challenge-content" style="max-width:420px;">
+      <div class="challenge-title">Register Service</div>
+      <div class="challenge-question">Paste a musikey:// URI or enter details manually:</div>
+      <textarea id="serviceRegUri" class="service-uri-input" rows="3" placeholder="musikey://register?service=Example&rpId=example.com&userId=user@example.com"></textarea>
+      <div class="service-manual-fields" id="serviceManualFields">
+        <input type="text" id="serviceRegName" placeholder="Service name" class="service-field">
+        <input type="text" id="serviceRegRpId" placeholder="Service domain (rpId)" class="service-field">
+        <input type="text" id="serviceRegUserId" placeholder="Your user ID at this service" class="service-field">
+        <input type="text" id="serviceRegEndpoint" placeholder="Endpoint URL (optional)" class="service-field">
+      </div>
+      <div class="challenge-options">
+        <button id="serviceRegSubmit" class="btn btn-primary">Register</button>
+        <button id="serviceRegCancel" class="btn btn-secondary">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Challenge approval dialog -->
+  <div id="serviceChallengeDialog" class="challenge-dialog" style="display:none;">
+    <div class="challenge-content" style="max-width:420px;">
+      <div class="challenge-title">Authentication Request</div>
+      <div class="challenge-question" id="challengeApprovalMsg">A service is requesting authentication:</div>
+      <div class="service-challenge-details" id="challengeDetails"></div>
+      <textarea id="manualChallengeUri" class="service-uri-input" rows="3" placeholder="Paste musikey://auth?... URI or JSON challenge" style="display:none;"></textarea>
+      <div class="challenge-options">
+        <button id="challengeApproveBtn" class="btn btn-primary">Approve</button>
+        <button id="challengeDenyBtn" class="btn btn-danger">Deny</button>
+      </div>
+      <div class="challenge-response-output" id="challengeResponseOutput" style="display:none;">
+        <div class="challenge-question">Signed response:</div>
+        <textarea id="challengeResponseText" class="service-uri-input" rows="4" readonly></textarea>
+        <button id="challengeResponseCopy" class="btn btn-small">Copy</button>
+        <button id="challengeResponseClose" class="btn btn-small">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Sync passphrase dialog -->
+  <div id="syncDialog" class="challenge-dialog" style="display:none;">
+    <div class="challenge-content">
+      <div class="challenge-title" id="syncDialogTitle">Sync Passphrase</div>
+      <div class="challenge-question" id="syncDialogMsg">Enter a passphrase to encrypt the sync bundle:</div>
+      <input type="password" id="syncPassphrase" class="totp-input" placeholder="Sync passphrase">
+      <button id="syncSubmit" class="btn btn-primary">Submit</button>
+    </div>
+  </div>
 
   <script src="renderer.js"></script>
 </body>

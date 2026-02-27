@@ -57,6 +57,8 @@ export interface MusikeyAnalysis {
   isValidMusic: boolean;
 }
 
+export type KdfType = 'pbkdf2-scrypt' | 'pbkdf2-argon2id';
+
 export interface MusikeyScrambled {
   scrambledData: string;
   dataSize: number;
@@ -67,6 +69,25 @@ export interface MusikeyScrambled {
   innerAuthTag: string;
   verificationHash: string;
   scrambleIterations: number;
+  kdfType?: KdfType;
+}
+
+export enum AuthLevel {
+  BASIC = 1,    // Passphrase + decrypt only
+  STANDARD = 2, // + musicality verification
+  HIGH = 3,     // + fingerprint visual confirmation
+}
+
+export interface MFAConfig {
+  challengeResponse?: boolean;
+  totp?: boolean;
+  hardwareKey?: { vendorId: string; productId: string; name: string };
+  webauthnSignature?: boolean;
+}
+
+export interface ZKPCommitmentData {
+  commitment: string; // SHA-256 hex of song data + nonce
+  nonce: string;      // Random nonce used in commitment
 }
 
 export interface MusikeyCredential {
@@ -82,6 +103,13 @@ export interface MusikeyCredential {
   locked: boolean;
   version: number;
   integrityHash: string;
+  keyVersion?: number;
+  authLevel?: AuthLevel;
+  mfa?: MFAConfig;
+  zkpCommitment?: ZKPCommitmentData;
+  webauthn?: import('./webauthn-types').MusikeyWebAuthnCredential;
+  auditLog?: import('./webauthn-types').AuditLogEntry[];
+  services?: import('./protokey-types').ServiceRegistration[];
 }
 
 export interface MusikeyConfig {

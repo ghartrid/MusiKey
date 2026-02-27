@@ -1,0 +1,14 @@
+{
+  "name": "musikey-oauth",
+  "version": "1.0.0",
+  "description": "MusiKey OAuth2 Provider - Authorization Code Flow",
+  "main": "dist/server.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "tsc && node dist/server.js"
+  },
+  "devDependencies": {
+    "typescript": "^5.5.0",
+    "@types/node": "^20.0.0"
+  }
+}

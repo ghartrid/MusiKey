@@ -229,6 +229,12 @@ export function deleteCredential(userId: string): void {
   writeStore(store);
 }
 
+export function listCredentialsByRpId(rpId: string): any[] {
+  const store = readStore();
+  return Object.values(store.credentials)
+    .filter((cred: any) => cred.webauthn?.rpId === rpId);
+}
+
 export function exportCredential(userId: string): string | null {
   const cred = getCredential(userId);
   if (!cred) return null;
@@ -250,4 +256,43 @@ export function importCredential(jsonString: string): boolean {
   } catch {
     return false;
   }
+}
+
+// --- MusiKey Protocol Service Operations ---
+
+export function getServicesByUserId(userId: string): any[] {
+  const cred = getCredential(userId);
+  if (!cred) return [];
+  return cred.services || [];
+}
+
+export function saveServiceRegistration(userId: string, service: any): boolean {
+  const store = readStore();
+  const cred = store.credentials[userId];
+  if (!cred) return false;
+  if (!cred.services) cred.services = [];
+  // Replace existing service with same serviceId, or append
+  const idx = cred.services.findIndex((s: any) => s.serviceId === service.serviceId);
+  if (idx >= 0) {
+    cred.services[idx] = service;
+  } else {
+    cred.services.push(service);
+  }
+  cred._hmac = computeHmac(cred);
+  store.credentials[userId] = cred;
+  writeStore(store);
+  return true;
+}
+
+export function removeServiceRegistration(userId: string, serviceId: string): boolean {
+  const store = readStore();
+  const cred = store.credentials[userId];
+  if (!cred || !cred.services) return false;
+  const before = cred.services.length;
+  cred.services = cred.services.filter((s: any) => s.serviceId !== serviceId);
+  if (cred.services.length === before) return false;
+  cred._hmac = computeHmac(cred);
+  store.credentials[userId] = cred;
+  writeStore(store);
+  return true;
 }

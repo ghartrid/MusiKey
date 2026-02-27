@@ -1,4 +1,4 @@
-import { MusikeySong, MusikeyScrambled, MusikeyEvent, MusikeyError } from './types';
+import { MusikeySong, MusikeyScrambled, MusikeyEvent, MusikeyError, KdfType } from './types';
 
 function zeroBuffer(buf: Uint8Array): void {
   buf.fill(0);
@@ -51,11 +51,14 @@ function deserializeEvents(buffer: ArrayBuffer): MusikeyEvent[] {
   return events;
 }
 
-// Cascaded KDF: PBKDF2 (600k) → scrypt (N=2^17, 128MB memory-hard) → AES-256 key
-// Runs in main process via IPC for access to Node.js crypto.scryptSync
-async function deriveCascadedKey(passphrase: string, salt: Uint8Array, iterations: number): Promise<CryptoKey> {
+// Cascaded KDF: PBKDF2 (600k) → Argon2id (128MB memory-hard) → AES-256 key
+// Runs in main process via IPC for access to Node.js crypto + argon2
+async function deriveCascadedKey(passphrase: string, salt: Uint8Array, iterations: number, kdfType?: KdfType): Promise<CryptoKey> {
   const saltB64 = arrayBufferToBase64(salt.buffer as ArrayBuffer);
-  const keyB64 = await window.musikeyStore.cascadedKDF(passphrase, saltB64, iterations);
+  const isLegacy = kdfType === 'pbkdf2-scrypt';
+  const keyB64 = isLegacy
+    ? await window.musikeyStore.legacyCascadedKDF(passphrase, saltB64, iterations)
+    : await window.musikeyStore.cascadedKDF(passphrase, saltB64, iterations);
   const keyBytes = base64ToArrayBuffer(keyB64);
   return crypto.subtle.importKey(
     'raw', keyBytes, { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']
@@ -101,8 +104,8 @@ export async function scramble(
     const iv = new Uint8Array(12);
     crypto.getRandomValues(iv);
 
-    // Cascaded KDF: PBKDF2 → scrypt → AES key
-    const key = await deriveCascadedKey(passphrase, salt, iterations);
+    // Cascaded KDF: PBKDF2 → Argon2id → AES key
+    const key = await deriveCascadedKey(passphrase, salt, iterations, 'pbkdf2-argon2id');
     const plaintext = serializeEvents(song.events, song.eventCount);
     const verificationHash = await sha256(plaintext);
 
@@ -137,12 +140,22 @@ export async function scramble(
         innerAuthTag: arrayBufferToBase64(inner.authTag.buffer as ArrayBuffer),
         verificationHash: arrayBufferToBase64(verificationHash),
         scrambleIterations: iterations,
+        kdfType: 'pbkdf2-argon2id',
       },
       error: MusikeyError.OK,
     };
   } catch {
     return { scrambled: {} as MusikeyScrambled, error: MusikeyError.SCRAMBLE_FAILED };
   }
+}
+
+// Re-encrypt song with fresh salt (for key rotation / KDF migration)
+export async function reencrypt(
+  song: MusikeySong,
+  passphrase: string,
+  iterations: number = 600000
+): Promise<{ scrambled: MusikeyScrambled; error: MusikeyError }> {
+  return scramble(song, passphrase, iterations);
 }
 
 export async function descramble(
@@ -160,7 +173,9 @@ export async function descramble(
     combined.set(ciphertext);
     combined.set(authTag, ciphertext.length);
 
-    const key = await deriveCascadedKey(passphrase, salt, scrambled.scrambleIterations);
+    // Route to legacy scrypt or new Argon2id based on kdfType
+    const kdfType = scrambled.kdfType || 'pbkdf2-scrypt'; // default to legacy for old credentials
+    const key = await deriveCascadedKey(passphrase, salt, scrambled.scrambleIterations, kdfType);
 
     const innerCiphertext = await crypto.subtle.decrypt(
       { name: 'AES-GCM', iv, tagLength: 128 },

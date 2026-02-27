@@ -18,5 +18,8 @@
     "electron": "^33.0.0",
     "esbuild": "^0.24.0",
     "typescript": "^5.5.0"
+  },
+  "dependencies": {
+    "argon2": "^0.44.0"
   }
 }
