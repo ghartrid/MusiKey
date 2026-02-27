@@ -56,11 +56,25 @@ function createWindow(): void {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
+      sandbox: true,
+      webSecurity: true,
+      allowRunningInsecureContent: false,
+      navigateOnDragDrop: false,
     },
   });
 
   mainWindow.loadFile(path.join(__dirname, '..', 'renderer', 'index.html'));
   mainWindow.setMenuBarVisibility(false);
+
+  // Block navigation away from the app (prevents renderer hijack)
+  mainWindow.webContents.on('will-navigate', (event: any) => {
+    event.preventDefault();
+  });
+
+  // Block new window creation
+  mainWindow.webContents.setWindowOpenHandler(() => {
+    return { action: 'deny' };
+  });
 
   mainWindow.on('closed', () => {
     mainWindow = null;
@@ -86,17 +100,32 @@ app.on('window-all-closed', () => {
   }
 });
 
-// IPC handlers
-ipcMain.handle('store:getCredential', (_e: any, userId: string) => store.getCredential(userId));
-ipcMain.handle('store:saveCredential', (_e: any, cred: any) => store.saveCredential(cred));
+// IPC input validation helpers
+function assertString(val: unknown, name: string): string {
+  if (typeof val !== 'string' || val.length === 0 || val.length > 1024) {
+    throw new Error(`Invalid ${name}`);
+  }
+  return val;
+}
+
+function assertObject(val: unknown, name: string): any {
+  if (typeof val !== 'object' || val === null || Array.isArray(val)) {
+    throw new Error(`Invalid ${name}`);
+  }
+  return val;
+}
+
+// IPC handlers (all inputs validated)
+ipcMain.handle('store:getCredential', (_e: any, userId: unknown) => store.getCredential(assertString(userId, 'userId')));
+ipcMain.handle('store:saveCredential', (_e: any, cred: unknown) => store.saveCredential(assertObject(cred, 'credential')));
 ipcMain.handle('store:listUsers', () => store.listUsers());
-ipcMain.handle('store:deleteCredential', (_e: any, userId: string) => store.deleteCredential(userId));
-ipcMain.handle('store:listByRpId', (_e: any, rpId: string) => store.listCredentialsByRpId(rpId));
-ipcMain.handle('store:exportCredential', (_e: any, userId: string) => store.exportCredential(userId));
-ipcMain.handle('store:importCredential', (_e: any, json: string) => store.importCredential(json));
-ipcMain.handle('store:getServices', (_e: any, userId: string) => store.getServicesByUserId(userId));
-ipcMain.handle('store:saveService', (_e: any, userId: string, service: any) => store.saveServiceRegistration(userId, service));
-ipcMain.handle('store:removeService', (_e: any, userId: string, serviceId: string) => store.removeServiceRegistration(userId, serviceId));
+ipcMain.handle('store:deleteCredential', (_e: any, userId: unknown) => store.deleteCredential(assertString(userId, 'userId')));
+ipcMain.handle('store:listByRpId', (_e: any, rpId: unknown) => store.listCredentialsByRpId(assertString(rpId, 'rpId')));
+ipcMain.handle('store:exportCredential', (_e: any, userId: unknown) => store.exportCredential(assertString(userId, 'userId')));
+ipcMain.handle('store:importCredential', (_e: any, json: unknown) => store.importCredential(assertString(json, 'json')));
+ipcMain.handle('store:getServices', (_e: any, userId: unknown) => store.getServicesByUserId(assertString(userId, 'userId')));
+ipcMain.handle('store:saveService', (_e: any, userId: unknown, service: unknown) => store.saveServiceRegistration(assertString(userId, 'userId'), assertObject(service, 'service')));
+ipcMain.handle('store:removeService', (_e: any, userId: unknown, serviceId: unknown) => store.removeServiceRegistration(assertString(userId, 'userId'), assertString(serviceId, 'serviceId')));
 
 // Cascaded KDF: PBKDF2 (600k) → Argon2id (128MB, t=3) → 32-byte key
 // Argon2id is memory-hard + GPU/ASIC resistant (winner of Password Hashing Competition)
@@ -159,7 +188,15 @@ ipcMain.handle('dialog:showSave', async (_e: any, defaultName: string) => {
 
 ipcMain.handle('fs:writeFile', async (_e: any, filePath: string, data: string) => {
   try {
-    fs.writeFileSync(filePath, data, 'utf-8');
+    if (typeof filePath !== 'string' || typeof data !== 'string') return false;
+    // Path traversal guard: only allow writes to paths the save dialog could produce
+    // Reject paths containing null bytes, and resolve to catch ../
+    const resolved = path.resolve(filePath);
+    if (resolved.includes('\0')) return false;
+    // Block writes inside the app installation directory
+    const appDir = path.dirname(app.getAppPath());
+    if (resolved.startsWith(appDir)) return false;
+    fs.writeFileSync(resolved, data, 'utf-8');
     return true;
   } catch {
     return false;

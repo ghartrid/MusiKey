@@ -17,13 +17,30 @@ const pendingRequests = new Map<string, {
   timeout: ReturnType<typeof setTimeout>;
 }>();
 
-function json(res: http.ServerResponse, status: number, data: any): void {
-  res.writeHead(status, {
+// Only allow CORS from localhost origins (same machine, different ports)
+function getAllowedOrigin(req: http.IncomingMessage): string | null {
+  const origin = req.headers.origin;
+  if (!origin) return null;
+  try {
+    const url = new URL(origin);
+    if (url.hostname === '127.0.0.1' || url.hostname === 'localhost' || url.hostname === '::1') {
+      return origin;
+    }
+  } catch {}
+  return null;
+}
+
+function json(res: http.ServerResponse, status: number, data: any, req?: http.IncomingMessage): void {
+  const headers: Record<string, string> = {
     'Content-Type': 'application/json',
-    'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
     'Access-Control-Allow-Headers': 'Content-Type',
-  });
+  };
+  if (req) {
+    const allowed = getAllowedOrigin(req);
+    if (allowed) headers['Access-Control-Allow-Origin'] = allowed;
+  }
+  res.writeHead(status, headers);
   res.end(JSON.stringify(data));
 }
 
@@ -52,12 +69,14 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
 
   // CORS preflight
   if (method === 'OPTIONS') {
-    res.writeHead(204, {
-      'Access-Control-Allow-Origin': '*',
+    const headers: Record<string, string> = {
       'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
       'Access-Control-Allow-Headers': 'Content-Type',
       'Access-Control-Max-Age': '86400',
-    });
+    };
+    const allowed = getAllowedOrigin(req);
+    if (allowed) headers['Access-Control-Allow-Origin'] = allowed;
+    res.writeHead(204, headers);
     res.end();
     return;
   }
@@ -65,18 +84,18 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
   try {
     // GET /status — health check
     if (method === 'GET' && urlPath === '/status') {
-      return json(res, 200, { protocol: 'musikey-v1', ready: true, port: PORT });
+      return json(res, 200, { protocol: 'musikey-v1', ready: true, port: PORT }, req);
     }
 
     // POST /challenge — receive challenge from service
     if (method === 'POST' && urlPath === '/challenge') {
       if (!mainWindow) {
-        return json(res, 503, { error: 'MusiKey not ready' });
+        return json(res, 503, { error: 'MusiKey not ready' }, req);
       }
 
       const body = JSON.parse(await readBody(req));
       if (!body.rpId || !body.challenge) {
-        return json(res, 400, { error: 'rpId and challenge required' });
+        return json(res, 400, { error: 'rpId and challenge required' }, req);
       }
 
       const requestId = generateRequestId();
@@ -103,26 +122,26 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
       });
 
       if (result.error === 'timeout') {
-        return json(res, 408, { error: 'User did not respond in time' });
+        return json(res, 408, { error: 'User did not respond in time' }, req);
       }
       if (result.error === 'denied') {
-        return json(res, 403, { error: 'User denied the request' });
+        return json(res, 403, { error: 'User denied the request' }, req);
       }
       if (result.assertion) {
-        return json(res, 200, result.assertion);
+        return json(res, 200, result.assertion, req);
       }
-      return json(res, 500, { error: result.error || 'Unknown error' });
+      return json(res, 500, { error: result.error || 'Unknown error' }, req);
     }
 
     // POST /register — receive registration request from service
     if (method === 'POST' && urlPath === '/register') {
       if (!mainWindow) {
-        return json(res, 503, { error: 'MusiKey not ready' });
+        return json(res, 503, { error: 'MusiKey not ready' }, req);
       }
 
       const body = JSON.parse(await readBody(req));
       if (!body.rpId || !body.serviceName) {
-        return json(res, 400, { error: 'rpId and serviceName required' });
+        return json(res, 400, { error: 'rpId and serviceName required' }, req);
       }
 
       const requestId = generateRequestId();
@@ -148,20 +167,20 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
       });
 
       if (result.error === 'timeout') {
-        return json(res, 408, { error: 'User did not respond in time' });
+        return json(res, 408, { error: 'User did not respond in time' }, req);
       }
       if (result.error === 'denied') {
-        return json(res, 403, { error: 'User denied the request' });
+        return json(res, 403, { error: 'User denied the request' }, req);
       }
       if (result.registration) {
-        return json(res, 201, result.registration);
+        return json(res, 201, result.registration, req);
       }
-      return json(res, 500, { error: result.error || 'Unknown error' });
+      return json(res, 500, { error: result.error || 'Unknown error' }, req);
     }
 
-    json(res, 404, { error: 'Not found' });
+    json(res, 404, { error: 'Not found' }, req);
   } catch (err: any) {
-    json(res, 500, { error: err.message || 'Internal error' });
+    json(res, 500, { error: err.message || 'Internal error' }, req);
   }
 }
 

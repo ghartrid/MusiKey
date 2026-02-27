@@ -125,6 +125,14 @@ function decryptStore(data: Buffer): string {
   return decrypted.toString('utf8');
 }
 
+// Constant-time string comparison (prevents timing side-channel)
+function constantTimeEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  const bufA = Buffer.from(a);
+  const bufB = Buffer.from(b);
+  return nodeCrypto.timingSafeEqual(bufA, bufB);
+}
+
 // HMAC for tamper-resistant lockout fields
 function computeHmac(credential: any): string {
   const key = getMachineKey();
@@ -191,7 +199,7 @@ export function getCredential(userId: string): any | null {
   // Verify HMAC — if tampered, force lock
   if (cred._hmac) {
     const expected = computeHmac(cred);
-    if (cred._hmac !== expected) {
+    if (!constantTimeEqual(cred._hmac, expected)) {
       cred.locked = true;
       cred.failedAttempts = 999;
       cred._hmac = computeHmac(cred);
@@ -247,10 +255,18 @@ export function exportCredential(userId: string): string | null {
 export function importCredential(jsonString: string): boolean {
   try {
     const cred = JSON.parse(jsonString);
-    if (!cred.userId) return false;
+    // Schema validation: require essential fields and correct types
+    if (typeof cred.userId !== 'string' || cred.userId.length === 0 || cred.userId.length > 256) return false;
+    if (!cred.scrambledSong || typeof cred.scrambledSong !== 'object') return false;
+    if (typeof cred.scrambledSong.scrambledData !== 'string') return false;
+    if (typeof cred.scrambledSong.salt !== 'string') return false;
+    if (typeof cred.scrambledSong.iv !== 'string') return false;
+    if (typeof cred.scrambledSong.authTag !== 'string') return false;
+    // Strip dangerous internal fields
     cred.failedAttempts = 0;
     cred.locked = false;
     delete cred._selfDestruct;
+    delete cred._hmac;
     saveCredential(cred);
     return true;
   } catch {
