@@ -9,6 +9,7 @@ const MAX_BODY_SIZE = 16 * 1024; // 16 KB
 
 let server: http.Server | null = null;
 let mainWindow: any = null;
+let ipcListenersRegistered = false;
 
 // Pending requests waiting for renderer approval
 const pendingRequests = new Map<string, {
@@ -167,35 +168,40 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
 export function startProtocolServer(win: any): void {
   mainWindow = win;
 
-  const { ipcMain: ipc } = require('electron');
+  // Guard against duplicate IPC listener registration (e.g., macOS activate re-creates window)
+  if (!ipcListenersRegistered) {
+    ipcListenersRegistered = true;
+    const { ipcMain: ipc } = require('electron');
 
-  // Handle renderer responses to protocol requests
-  ipc.on('protocol:challenge-response', (_event: any, data: { requestId: string; assertion?: any; error?: string }) => {
-    const pending = pendingRequests.get(data.requestId);
-    if (pending) {
-      clearTimeout(pending.timeout);
-      pendingRequests.delete(data.requestId);
-      if (data.assertion) {
-        pending.resolve({ assertion: data.assertion });
-      } else {
-        pending.resolve({ error: data.error || 'denied' });
+    // Handle renderer responses to protocol requests
+    ipc.on('protocol:challenge-response', (_event: any, data: { requestId: string; assertion?: any; error?: string }) => {
+      const pending = pendingRequests.get(data.requestId);
+      if (pending) {
+        clearTimeout(pending.timeout);
+        pendingRequests.delete(data.requestId);
+        if (data.assertion) {
+          pending.resolve({ assertion: data.assertion });
+        } else {
+          pending.resolve({ error: data.error || 'denied' });
+        }
       }
-    }
-  });
+    });
 
-  ipc.on('protocol:register-response', (_event: any, data: { requestId: string; registration?: any; error?: string }) => {
-    const pending = pendingRequests.get(data.requestId);
-    if (pending) {
-      clearTimeout(pending.timeout);
-      pendingRequests.delete(data.requestId);
-      if (data.registration) {
-        pending.resolve({ registration: data.registration });
-      } else {
-        pending.resolve({ error: data.error || 'denied' });
+    ipc.on('protocol:register-response', (_event: any, data: { requestId: string; registration?: any; error?: string }) => {
+      const pending = pendingRequests.get(data.requestId);
+      if (pending) {
+        clearTimeout(pending.timeout);
+        pendingRequests.delete(data.requestId);
+        if (data.registration) {
+          pending.resolve({ registration: data.registration });
+        } else {
+          pending.resolve({ error: data.error || 'denied' });
+        }
       }
-    }
-  });
+    });
+  }
 
+  if (server) return; // Already running
   server = http.createServer(handleRequest);
   server.listen(PORT, '127.0.0.1', () => {
     console.log(`MusiKey Protocol Server listening on http://127.0.0.1:${PORT}`);

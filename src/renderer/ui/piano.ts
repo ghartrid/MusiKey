@@ -2,8 +2,9 @@ const WHITE_KEY_WIDTH = 24;
 const BLACK_KEY_WIDTH = 16;
 const WHITE_KEY_HEIGHT = 70;
 const BLACK_KEY_HEIGHT = 44;
-const START_NOTE = 48; // C3
-const NUM_WHITE_KEYS = 15; // C3 to D5
+const START_NOTE = 36; // C3 (octave 3)
+const END_NOTE = 84;   // C7 — covers octaves 3-6 used by song generator
+const NUM_WHITE_KEYS = 28; // C3 to B6 = 28 white keys
 
 interface KeyLayout {
   note: number;
@@ -22,12 +23,11 @@ function buildLayout(canvasWidth: number): void {
   const keyW = Math.floor(canvasWidth / totalWhite);
   const blackW = Math.floor(keyW * 0.65);
 
-  let whiteIdx = 0;
   // White keys first, then black overlaid
   const whiteNotes: number[] = [];
   const blackNotes: number[] = [];
 
-  for (let n = START_NOTE; n < START_NOTE + 25; n++) {
+  for (let n = START_NOTE; n < END_NOTE; n++) {
     const pc = n % 12;
     if ([1, 3, 6, 8, 10].includes(pc)) {
       blackNotes.push(n);

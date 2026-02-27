@@ -229,7 +229,8 @@ export function parseProtocolUri(uri: string): ParsedProtocolUri | null {
 
     if (uri.startsWith('musikey://')) {
       // Convert musikey:// to https:// for URL parsing
-      url = new URL(uri.replace('musikey://', 'https://musikey.protocol/'));
+      // musikey://register?... → https://register?... so hostname = 'register' or 'auth'
+      url = new URL(uri.replace('musikey://', 'https://'));
     } else if (uri.startsWith('{')) {
       // JSON format
       const json = JSON.parse(uri);

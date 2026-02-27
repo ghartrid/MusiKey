@@ -15,10 +15,9 @@ import { generateTOTP, verifyTOTP, getTimeRemaining, TOTP_PERIOD } from '../core
 import { createCommitment, verifyCommitment } from '../core/zkp';
 import { createSyncBundle, importSyncBundle } from '../core/sync';
 import { register as webauthnRegister, authenticate as webauthnAuthenticate, verifyAssertion, generateChallenge as webauthnChallenge, reencryptPrivateKey } from '../core/fido2';
-import { createAuditEntry, appendAuditEntry, getAuditSummary, verifyAuditChain } from '../core/audit';
-import type { MusikeyWebAuthnCredential, AuditLogEntry } from '../core/webauthn-types';
+import { createAuditEntry, appendAuditEntry, getAuditSummary } from '../core/audit';
 import { registerWithService, signProtocolChallenge, verifyProtocolAssertion, generateProtocolChallenge, parseProtocolUri } from '../core/protokey';
-import type { ServiceRegistration, ProtocolChallenge } from '../core/protokey-types';
+import type { ProtocolChallenge } from '../core/protokey-types';
 
 declare global {
   interface Window {
@@ -47,6 +46,10 @@ declare global {
 }
 
 type AppState = 'idle' | 'enrolling' | 'authenticating' | 'playing' | 'success' | 'failure' | 'locked' | 'cooldown';
+
+function escapeHtml(str: string): string {
+  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
 
 let config: MusikeyConfig = { ...DEFAULT_CONFIG };
 let state: AppState = 'idle';
@@ -365,28 +368,35 @@ function showTotpDialog(): Promise<boolean> {
     totpDialog.style.display = '';
     totpInput.focus();
 
+    const cancelBtn = document.getElementById('totpCancel') as HTMLButtonElement;
+    const cleanup = () => {
+      totpSubmit.removeEventListener('click', handler);
+      cancelBtn.removeEventListener('click', cancelHandler);
+      totpDialog.style.display = 'none';
+    };
     const handler = async () => {
       const code = totpInput.value.trim();
       if (code.length !== 6) return;
-      totpSubmit.removeEventListener('click', handler);
-      totpDialog.style.display = 'none';
+      cleanup();
       if (!lastSongHash) { resolve(false); return; }
       const ok = await verifyTOTP(lastSongHash, code);
       resolve(ok);
     };
+    const cancelHandler = () => { cleanup(); resolve(false); };
     totpSubmit.addEventListener('click', handler);
+    cancelBtn.addEventListener('click', cancelHandler);
   });
 }
 
 // Fingerprint confirmation dialog
-function showFingerprintConfirmDialog(song: MusikeySong): Promise<boolean> {
-  return new Promise(async (resolve) => {
-    const ctx = fpDialogCanvas.getContext('2d');
-    if (ctx) {
-      await showFingerprint(song, fpDialogCanvas, ctx);
-    }
-    fingerprintDialog.style.display = '';
+async function showFingerprintConfirmDialog(song: MusikeySong): Promise<boolean> {
+  const ctx = fpDialogCanvas.getContext('2d');
+  if (ctx) {
+    await showFingerprint(song, fpDialogCanvas, ctx);
+  }
+  fingerprintDialog.style.display = '';
 
+  return new Promise((resolve) => {
     const onConfirm = () => {
       fingerprintDialog.style.display = 'none';
       fpConfirm.removeEventListener('click', onConfirm);
@@ -413,13 +423,20 @@ function showSyncDialog(title: string, message: string): Promise<string | null> 
     syncDialog.style.display = '';
     syncPassphraseInput.focus();
 
+    const cancelBtn = document.getElementById('syncCancel') as HTMLButtonElement;
+    const cleanup = () => {
+      syncSubmitBtn.removeEventListener('click', handler);
+      cancelBtn.removeEventListener('click', cancelHandler);
+      syncDialog.style.display = 'none';
+    };
     const handler = () => {
       const val = syncPassphraseInput.value.trim();
-      syncSubmitBtn.removeEventListener('click', handler);
-      syncDialog.style.display = 'none';
+      cleanup();
       resolve(val || null);
     };
+    const cancelHandler = () => { cleanup(); resolve(null); };
     syncSubmitBtn.addEventListener('click', handler);
+    cancelBtn.addEventListener('click', cancelHandler);
   });
 }
 
@@ -776,7 +793,7 @@ async function doAuthenticate(): Promise<void> {
   credential.lastAuthTimestamp = Date.now();
 
   const needsMigration = !credential.scrambledSong.kdfType || credential.scrambledSong.kdfType === 'pbkdf2-scrypt';
-  if (needsMigration || true) { // Always rotate keys for forward secrecy
+  { // Always rotate keys for forward secrecy
     const { scrambled: rotated, error: reErr } = await reencrypt(song, passphrase, config.scrambleIterations);
     if (reErr === MusikeyError.OK) {
       credential.scrambledSong = rotated;
@@ -850,7 +867,7 @@ async function doAuthenticate(): Promise<void> {
   if (credential.webauthn) {
     try {
       const challenge = webauthnChallenge();
-      const { response: assertionResp, newSignCount } = await webauthnAuthenticate(
+      const { response: assertionResp } = await webauthnAuthenticate(
         { rpId: credential.webauthn.rpId, challenge },
         credential.webauthn,
         passphrase,
@@ -1028,10 +1045,10 @@ async function showAuditDialog(): Promise<void> {
                   entry.action === 'counter_mismatch' ? '#ff6b6b' :
                   entry.action === 'registration' ? '#e94560' : '#888';
     html += `<div style="margin-bottom:4px;font-size:11px;">
-      <span style="color:${color};font-weight:600;">${entry.action}</span>
-      <span style="color:#666;margin-left:6px;">${date}</span>
+      <span style="color:${color};font-weight:600;">${escapeHtml(entry.action)}</span>
+      <span style="color:#666;margin-left:6px;">${escapeHtml(date)}</span>
       ${entry.signCount !== undefined ? `<span style="color:#666;margin-left:6px;">sig#${entry.signCount}</span>` : ''}
-      ${entry.detail ? `<div style="color:#555;font-size:10px;margin-left:8px;">${entry.detail}</div>` : ''}
+      ${entry.detail ? `<div style="color:#555;font-size:10px;margin-left:8px;">${escapeHtml(entry.detail)}</div>` : ''}
     </div>`;
   }
 
@@ -1438,7 +1455,7 @@ async function doTestServiceAuth(service: any): Promise<void> {
     ];
     for (const [label, value] of lines) {
       const row = document.createElement('div');
-      row.innerHTML = `<span class="detail-label">${label}:</span> ${value}`;
+      row.innerHTML = `<span class="detail-label">${escapeHtml(label)}:</span> ${escapeHtml(value)}`;
       details.appendChild(row);
     }
 
@@ -1541,7 +1558,7 @@ async function submitServiceRegistration(): Promise<void> {
   statusEl.textContent = 'Registering with service...';
 
   try {
-    const { registration, response } = await registerWithService(
+    const { registration } = await registerWithService(
       rpId, serviceName, serviceUserId, passphrase, config.scrambleIterations, endpoint
     );
 
@@ -1696,9 +1713,9 @@ function setupProtocolListeners(): void {
 
     details.innerHTML = '';
     const rpDiv = document.createElement('div');
-    rpDiv.innerHTML = '<span class="detail-label">Service:</span> ' + challenge.rpId;
+    rpDiv.innerHTML = '<span class="detail-label">Service:</span> ' + escapeHtml(challenge.rpId);
     const chalDiv = document.createElement('div');
-    chalDiv.innerHTML = '<span class="detail-label">Challenge:</span> ' + (challenge.challenge || '').substring(0, 32) + '...';
+    chalDiv.innerHTML = '<span class="detail-label">Challenge:</span> ' + escapeHtml((challenge.challenge || '').substring(0, 32)) + '...';
     const timeDiv = document.createElement('div');
     timeDiv.innerHTML = '<span class="detail-label">Time:</span> ' + new Date(challenge.timestamp * 1000).toLocaleTimeString();
     details.appendChild(rpDiv);
@@ -1725,7 +1742,6 @@ function setupProtocolListeners(): void {
     (document.getElementById('serviceRegEndpoint') as HTMLInputElement).value = request.endpoint || '';
 
     // Override submit to include requestId response
-    const origSubmit = (document.getElementById('serviceRegSubmit') as HTMLButtonElement).onclick;
     (document.getElementById('serviceRegSubmit') as HTMLButtonElement).onclick = async () => {
       await submitServiceRegistration();
       const userId = usernameInput.value.trim() || userListEl.value;
@@ -1864,10 +1880,7 @@ export function initApp(): void {
   userListEl.addEventListener('change', onUserSelect);
   authOverlayDismiss.addEventListener('click', hideAuthOverlay);
 
-  // MFA toggle — show/hide TOTP display and MFA section
-  mfaChallengeCheck.addEventListener('change', () => {
-    mfaSection.style.display = (mfaChallengeCheck.checked || mfaTotpCheck.checked) ? '' : '';
-  });
+  // MFA toggle — control TOTP display when checkbox changes
   mfaTotpCheck.addEventListener('change', () => {
     if (mfaTotpCheck.checked && lastSongHash) {
       startTotpDisplay();
@@ -1907,6 +1920,27 @@ export function initApp(): void {
 
   // Setup tooltips
   setupTooltips();
+
+  // Global Escape key handler for all dialogs
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape') return;
+    // Close in z-index order: tooltips → onboarding → help → dialogs → overlay
+    if (activeTooltip) { hideTooltipEl(); return; }
+    if (onboardingOverlay.style.display !== 'none') { hideOnboarding(); return; }
+    if (helpDialog.style.display !== 'none') { hideHelp(); return; }
+
+    const dialogs = [
+      serviceChallengeDialog, serviceRegDialog, syncDialog,
+      totpDialog, fingerprintDialog, challengeDialog,
+      document.getElementById('auditDialog') as HTMLElement,
+    ];
+    for (const d of dialogs) {
+      if (d && d.style.display !== 'none') { d.style.display = 'none'; return; }
+    }
+    if (authOverlay.style.display !== 'none' && !authOverlayDismiss.disabled) {
+      hideAuthOverlay();
+    }
+  });
 
   refreshUserList();
   checkShowOnboarding();

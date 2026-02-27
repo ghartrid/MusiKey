@@ -157,7 +157,10 @@
       <div class="challenge-title">TOTP Verification</div>
       <div class="challenge-question">Enter your 6-digit code:</div>
       <input type="text" id="totpInput" class="totp-input" maxlength="6" placeholder="000000">
-      <button id="totpSubmit" class="btn btn-primary">Verify</button>
+      <div class="challenge-options" style="flex-direction:row;gap:8px;">
+        <button id="totpSubmit" class="btn btn-primary">Verify</button>
+        <button id="totpCancel" class="btn btn-secondary">Cancel</button>
+      </div>
     </div>
   </div>
 
@@ -228,7 +231,10 @@
       <div class="challenge-title" id="syncDialogTitle">Sync Passphrase</div>
       <div class="challenge-question" id="syncDialogMsg">Enter a passphrase to encrypt the sync bundle:</div>
       <input type="password" id="syncPassphrase" class="totp-input" placeholder="Sync passphrase">
-      <button id="syncSubmit" class="btn btn-primary">Submit</button>
+      <div class="challenge-options" style="flex-direction:row;gap:8px;">
+        <button id="syncSubmit" class="btn btn-primary">Submit</button>
+        <button id="syncCancel" class="btn btn-secondary">Cancel</button>
+      </div>
     </div>
   </div>
 
