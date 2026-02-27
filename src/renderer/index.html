@@ -11,6 +11,7 @@
   <header>
     <div class="logo">&#9835; MUSIKEY</div>
     <div class="subtitle">Musical Entropy Authentication</div>
+    <button id="helpBtn" class="help-btn" title="Help">?</button>
   </header>
 
   <main>
@@ -24,7 +25,7 @@
       </div>
 
       <div class="input-group">
-        <label for="passphrase">Passphrase</label>
+        <label for="passphrase">Passphrase <span class="info-icon" data-tooltip="Minimum 12 characters with 3+ categories (uppercase, lowercase, digits, symbols). Needs 50+ bits of effective entropy.">&#9432;</span></label>
         <input type="password" id="passphrase" placeholder="Enter passphrase (12+ chars)">
         <div class="strength-meter">
           <div class="strength-bar" id="strengthBar"></div>
@@ -34,11 +35,11 @@
 
       <div class="input-row settings">
         <div class="input-group small">
-          <label for="scale">Scale</label>
+          <label for="scale">Scale <span class="info-icon" data-tooltip="Musical scale for your composition. Pentatonic and Blues scales produce more melodic results.">&#9432;</span></label>
           <select id="scale"></select>
         </div>
         <div class="input-group small">
-          <label for="songLength">Length: <span id="lengthLabel">64</span></label>
+          <label for="songLength">Length: <span class="info-icon" data-tooltip="Number of musical events. Longer songs have higher entropy but take longer to process.">&#9432;</span> <span id="lengthLabel">64</span></label>
           <input type="range" id="songLength" min="32" max="256" value="64" step="8">
         </div>
       </div>
@@ -53,8 +54,8 @@
     <section class="status-bar">
       <div id="status" class="status-text">Ready</div>
       <div class="status-info">
-        <span>Entropy: <span id="entropy">-</span> bits</span>
-        <span>Attempts: <span id="attempts">-</span></span>
+        <span>Entropy: <span class="info-icon" data-tooltip="Bits of randomness in your composition. Higher is more secure. Minimum 40 bits required.">&#9432;</span> <span id="entropy">-</span> bits</span>
+        <span>Attempts: <span class="info-icon" data-tooltip="Failed authentication attempts. After 5 failures, the credential self-destructs permanently.">&#9432;</span> <span id="attempts">-</span></span>
       </div>
     </section>
 
@@ -70,14 +71,14 @@
 
     <section class="fingerprint-section" id="fingerprintSection" style="display:none;">
       <div class="fingerprint-header">
-        <span class="fingerprint-title">Song Fingerprint</span>
+        <span class="fingerprint-title">Song Fingerprint <span class="info-icon" data-tooltip="A unique visual hash of your composition. Compare during High-security auth to verify credential integrity.">&#9432;</span></span>
         <span class="fingerprint-label" id="fingerprintLabel"></span>
       </div>
       <canvas id="fingerprint" width="108" height="108"></canvas>
     </section>
 
     <section class="mfa-section" id="mfaSection" style="display:none;">
-      <div class="mfa-header">Multi-Factor Authentication</div>
+      <div class="mfa-header">Multi-Factor Authentication <span class="info-icon" data-tooltip="Add extra verification layers. Challenge-Response asks musical questions. TOTP generates time-based 6-digit codes.">&#9432;</span></div>
       <div class="mfa-options">
         <label class="mfa-option">
           <input type="checkbox" id="mfaChallengeResponse"> Challenge-Response
@@ -97,7 +98,7 @@
 
     <section class="auth-level-section">
       <div class="input-group small">
-        <label for="authLevel">Security Level</label>
+        <label for="authLevel">Security Level <span class="info-icon" data-tooltip="Controls verification depth. Basic: passphrase only. Standard: adds musicality check. High: adds visual fingerprint confirmation.">&#9432;</span></label>
         <select id="authLevel">
           <option value="1">Basic (decrypt only)</option>
           <option value="2" selected>Standard (+ musicality)</option>
@@ -228,6 +229,90 @@
       <div class="challenge-question" id="syncDialogMsg">Enter a passphrase to encrypt the sync bundle:</div>
       <input type="password" id="syncPassphrase" class="totp-input" placeholder="Sync passphrase">
       <button id="syncSubmit" class="btn btn-primary">Submit</button>
+    </div>
+  </div>
+
+  <!-- Onboarding overlay -->
+  <div id="onboardingOverlay" class="onboarding-overlay" style="display:none;">
+    <div class="onboarding-content">
+      <div class="onboarding-steps">
+        <div class="onboarding-step" data-step="0">
+          <div class="onboarding-icon">&#9835;</div>
+          <div class="onboarding-step-title">Welcome to MusiKey</div>
+          <div class="onboarding-step-text">MusiKey turns musical compositions into cryptographic keys. Your passphrase generates a unique song, which is encrypted and stored as your credential. No two songs are alike.</div>
+        </div>
+        <div class="onboarding-step" data-step="1" style="display:none;">
+          <div class="onboarding-icon">&#9998;</div>
+          <div class="onboarding-step-title">Enroll a Credential</div>
+          <div class="onboarding-step-text">Enter a username and a strong passphrase (12+ characters, mixed case/digits/symbols). Choose a musical scale, then click <strong>Enroll</strong>. MusiKey generates a composition and encrypts it with cascaded key derivation.</div>
+        </div>
+        <div class="onboarding-step" data-step="2" style="display:none;">
+          <div class="onboarding-icon">&#9836;</div>
+          <div class="onboarding-step-title">Authenticate with Music</div>
+          <div class="onboarding-step-text">Select your user and enter your passphrase, then click <strong>Authenticate</strong>. MusiKey decrypts your song, verifies its musicality, and shows entropy and analysis scores. Click <strong>Play</strong> to hear it.</div>
+        </div>
+        <div class="onboarding-step" data-step="3" style="display:none;">
+          <div class="onboarding-icon">&#128274;</div>
+          <div class="onboarding-step-title">Security Features</div>
+          <div class="onboarding-step-text"><strong>Security Level</strong> controls verification depth. <strong>Multi-Factor Auth</strong> adds challenge-response or TOTP. After 5 failed attempts, the credential self-destructs. Rate limiting applies exponential backoff between tries.</div>
+        </div>
+        <div class="onboarding-step" data-step="4" style="display:none;">
+          <div class="onboarding-icon">&#127760;</div>
+          <div class="onboarding-step-title">Services &amp; Management</div>
+          <div class="onboarding-step-text">Use the <strong>Services</strong> panel to register external sites via the MusiKey Protocol (ECDSA authentication). The bottom bar has <strong>Export/Import</strong>, <strong>Sync</strong>, and <strong>Audit</strong> tools. Click <strong>?</strong> in the header anytime for help.</div>
+        </div>
+      </div>
+      <div class="onboarding-dots" id="onboardingDots">
+        <span class="onboarding-dot active"></span>
+        <span class="onboarding-dot"></span>
+        <span class="onboarding-dot"></span>
+        <span class="onboarding-dot"></span>
+        <span class="onboarding-dot"></span>
+      </div>
+      <div class="onboarding-nav">
+        <button id="onboardingBack" class="btn btn-secondary btn-small" style="display:none;">Back</button>
+        <button id="onboardingNext" class="btn btn-primary btn-small">Next</button>
+        <button id="onboardingDone" class="btn btn-primary btn-small" style="display:none;">Get Started</button>
+      </div>
+      <label class="onboarding-dismiss-label">
+        <input type="checkbox" id="onboardingDismiss"> Don't show again
+      </label>
+    </div>
+  </div>
+
+  <!-- Help panel -->
+  <div id="helpDialog" class="challenge-dialog" style="display:none;">
+    <div class="challenge-content help-panel-content">
+      <div class="challenge-title">MusiKey Help</div>
+      <div class="help-categories">
+        <div class="help-category">
+          <div class="help-category-title">Authentication</div>
+          <div class="help-item"><strong>Enroll</strong> — Create a credential by generating a unique musical composition encrypted with your passphrase.</div>
+          <div class="help-item"><strong>Authenticate</strong> — Decrypt and verify your stored composition to prove your identity.</div>
+          <div class="help-item"><strong>Play</strong> — Listen to your decrypted composition after a successful authentication.</div>
+          <div class="help-item"><strong>Security Level</strong> — Basic (decrypt only), Standard (+ musicality check), or High (+ visual fingerprint confirmation).</div>
+        </div>
+        <div class="help-category">
+          <div class="help-category-title">Security</div>
+          <div class="help-item"><strong>Multi-Factor Auth</strong> — Add challenge-response (musical questions) or TOTP (time-based codes) as a second factor.</div>
+          <div class="help-item"><strong>Song Fingerprint</strong> — A unique visual pattern derived from your composition for manual verification.</div>
+          <div class="help-item"><strong>Self-Destruct</strong> — After 5 consecutive failed attempts, the credential is permanently wiped.</div>
+          <div class="help-item"><strong>Rate Limiting</strong> — Exponential backoff (2, 4, 8, 16, 32 seconds) between failed attempts.</div>
+        </div>
+        <div class="help-category">
+          <div class="help-category-title">Services</div>
+          <div class="help-item"><strong>MusiKey Protocol</strong> — Register external services that use ECDSA signatures for authentication via musikey:// URIs.</div>
+          <div class="help-item"><strong>Sign Challenge</strong> — Manually paste and sign authentication challenges from services.</div>
+        </div>
+        <div class="help-category">
+          <div class="help-category-title">Management</div>
+          <div class="help-item"><strong>Export / Import</strong> — Save or load individual credential files (JSON).</div>
+          <div class="help-item"><strong>Sync Export / Import</strong> — Encrypted bundles for transferring credentials between machines.</div>
+          <div class="help-item"><strong>Audit</strong> — View a tamper-evident log of all authentication events.</div>
+          <div class="help-item"><strong>Delete User</strong> — Permanently remove a credential. This cannot be undone.</div>
+        </div>
+      </div>
+      <button id="helpClose" class="btn btn-primary">Close</button>
     </div>
   </div>
 

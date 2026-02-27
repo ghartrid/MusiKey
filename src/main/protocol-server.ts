@@ -3,13 +3,12 @@
 // Services POST challenges here; MusiKey signs them after user approval
 
 import * as http from 'http';
-import { BrowserWindow, ipcMain } from 'electron';
 
 const PORT = 9817;
 const MAX_BODY_SIZE = 16 * 1024; // 16 KB
 
 let server: http.Server | null = null;
-let mainWindow: BrowserWindow | null = null;
+let mainWindow: any = null;
 
 // Pending requests waiting for renderer approval
 const pendingRequests = new Map<string, {
@@ -165,35 +164,37 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
   }
 }
 
-// Handle renderer responses to protocol requests
-ipcMain.on('protocol:challenge-response', (_event: any, data: { requestId: string; assertion?: any; error?: string }) => {
-  const pending = pendingRequests.get(data.requestId);
-  if (pending) {
-    clearTimeout(pending.timeout);
-    pendingRequests.delete(data.requestId);
-    if (data.assertion) {
-      pending.resolve({ assertion: data.assertion });
-    } else {
-      pending.resolve({ error: data.error || 'denied' });
-    }
-  }
-});
-
-ipcMain.on('protocol:register-response', (_event: any, data: { requestId: string; registration?: any; error?: string }) => {
-  const pending = pendingRequests.get(data.requestId);
-  if (pending) {
-    clearTimeout(pending.timeout);
-    pendingRequests.delete(data.requestId);
-    if (data.registration) {
-      pending.resolve({ registration: data.registration });
-    } else {
-      pending.resolve({ error: data.error || 'denied' });
-    }
-  }
-});
-
-export function startProtocolServer(win: BrowserWindow): void {
+export function startProtocolServer(win: any): void {
   mainWindow = win;
+
+  const { ipcMain: ipc } = require('electron');
+
+  // Handle renderer responses to protocol requests
+  ipc.on('protocol:challenge-response', (_event: any, data: { requestId: string; assertion?: any; error?: string }) => {
+    const pending = pendingRequests.get(data.requestId);
+    if (pending) {
+      clearTimeout(pending.timeout);
+      pendingRequests.delete(data.requestId);
+      if (data.assertion) {
+        pending.resolve({ assertion: data.assertion });
+      } else {
+        pending.resolve({ error: data.error || 'denied' });
+      }
+    }
+  });
+
+  ipc.on('protocol:register-response', (_event: any, data: { requestId: string; registration?: any; error?: string }) => {
+    const pending = pendingRequests.get(data.requestId);
+    if (pending) {
+      clearTimeout(pending.timeout);
+      pendingRequests.delete(data.requestId);
+      if (data.registration) {
+        pending.resolve({ registration: data.registration });
+      } else {
+        pending.resolve({ error: data.error || 'denied' });
+      }
+    }
+  });
 
   server = http.createServer(handleRequest);
   server.listen(PORT, '127.0.0.1', () => {

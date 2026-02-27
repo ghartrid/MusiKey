@@ -126,6 +126,21 @@ let manualChallengeBtn: HTMLButtonElement;
 let serviceRegDialog: HTMLElement;
 let serviceChallengeDialog: HTMLElement;
 let pendingProtocolRequestId: string | null = null;
+// Onboarding + help
+let onboardingOverlay: HTMLElement;
+let onboardingSteps: NodeListOf<HTMLElement>;
+let onboardingDots: NodeListOf<HTMLElement>;
+let onboardingBackBtn: HTMLButtonElement;
+let onboardingNextBtn: HTMLButtonElement;
+let onboardingDoneBtn: HTMLButtonElement;
+let onboardingDismissCheck: HTMLInputElement;
+let helpBtn: HTMLButtonElement;
+let helpDialog: HTMLElement;
+let helpCloseBtn: HTMLButtonElement;
+let currentOnboardingStep = 0;
+const ONBOARDING_TOTAL_STEPS = 5;
+const ONBOARDING_DISMISSED_KEY = 'musikey_onboarding_dismissed';
+let activeTooltip: HTMLElement | null = null;
 
 // Passphrase strength checker
 interface StrengthResult {
@@ -225,8 +240,9 @@ function setAnalysis(a: MusikeyAnalysis | null): void {
     <div class="analysis-row"><span>Melody</span><div class="bar-bg"><div class="bar-fill" style="width:${a.melodyScore * 100}%;background:#e94560"></div></div><span>${a.melodyScore.toFixed(2)}</span></div>
     <div class="analysis-row"><span>Rhythm</span><div class="bar-bg"><div class="bar-fill" style="width:${a.rhythmScore * 100}%;background:#0f3460"></div></div><span>${a.rhythmScore.toFixed(2)}</span></div>
     <div class="analysis-row"><span>Scale</span><div class="bar-bg"><div class="bar-fill" style="width:${a.scaleAdherence * 100}%;background:#e94560"></div></div><span>${a.scaleAdherence.toFixed(2)}</span></div>
-    <div class="analysis-overall"><span>Overall: ${a.overallMusicality.toFixed(2)}</span><span class="${a.isValidMusic ? 'valid' : 'invalid'}">${a.isValidMusic ? 'VALID' : 'INVALID'}</span></div>
+    <div class="analysis-overall"><span>Overall: ${a.overallMusicality.toFixed(2)} <span class="info-icon" data-tooltip="Combined musicality score (0-1). Threshold is 0.70 for Standard/High security levels.">&#9432;</span></span><span class="${a.isValidMusic ? 'valid' : 'invalid'}">${a.isValidMusic ? 'VALID' : 'INVALID'}</span></div>
   `;
+  setupTooltips();
 }
 
 async function refreshUserList(): Promise<void> {
@@ -1162,6 +1178,126 @@ function onUserSelect(): void {
   }
 }
 
+// --- Onboarding System ---
+
+function showOnboarding(): void {
+  currentOnboardingStep = 0;
+  updateOnboardingStep();
+  onboardingOverlay.style.display = '';
+}
+
+function hideOnboarding(): void {
+  onboardingOverlay.style.display = 'none';
+  if (onboardingDismissCheck.checked) {
+    localStorage.setItem(ONBOARDING_DISMISSED_KEY, '1');
+  }
+}
+
+function updateOnboardingStep(): void {
+  onboardingSteps.forEach((step, i) => {
+    step.style.display = i === currentOnboardingStep ? '' : 'none';
+  });
+  onboardingDots.forEach((dot, i) => {
+    dot.classList.toggle('active', i === currentOnboardingStep);
+  });
+  onboardingBackBtn.style.display = currentOnboardingStep === 0 ? 'none' : '';
+  const isLast = currentOnboardingStep === ONBOARDING_TOTAL_STEPS - 1;
+  onboardingNextBtn.style.display = isLast ? 'none' : '';
+  onboardingDoneBtn.style.display = isLast ? '' : 'none';
+}
+
+function onboardingNext(): void {
+  if (currentOnboardingStep < ONBOARDING_TOTAL_STEPS - 1) {
+    currentOnboardingStep++;
+    updateOnboardingStep();
+  }
+}
+
+function onboardingBack(): void {
+  if (currentOnboardingStep > 0) {
+    currentOnboardingStep--;
+    updateOnboardingStep();
+  }
+}
+
+async function checkShowOnboarding(): Promise<void> {
+  if (localStorage.getItem(ONBOARDING_DISMISSED_KEY) === '1') return;
+  showOnboarding();
+}
+
+// --- Tooltip System ---
+
+function setupTooltips(): void {
+  const icons = document.querySelectorAll<HTMLElement>('.info-icon[data-tooltip]');
+  icons.forEach(icon => {
+    if (icon.dataset.tooltipBound) return;
+    icon.dataset.tooltipBound = '1';
+    icon.addEventListener('mouseenter', showTooltip);
+    icon.addEventListener('mouseleave', hideTooltipEl);
+    icon.addEventListener('click', toggleTooltip);
+  });
+}
+
+function showTooltip(e: MouseEvent): void {
+  const icon = e.currentTarget as HTMLElement;
+  const text = icon.getAttribute('data-tooltip');
+  if (!text) return;
+
+  hideTooltipEl();
+
+  const tip = document.createElement('div');
+  tip.className = 'tooltip';
+  tip.textContent = text;
+  document.body.appendChild(tip);
+  activeTooltip = tip;
+
+  const rect = icon.getBoundingClientRect();
+  const tipRect = tip.getBoundingClientRect();
+
+  let top = rect.top - tipRect.height - 8;
+  let left = rect.left + rect.width / 2 - tipRect.width / 2;
+
+  if (top < 4) {
+    top = rect.bottom + 8;
+    tip.classList.add('below');
+  }
+
+  if (left < 4) left = 4;
+  if (left + tipRect.width > window.innerWidth - 4) {
+    left = window.innerWidth - tipRect.width - 4;
+  }
+
+  tip.style.top = `${top}px`;
+  tip.style.left = `${left}px`;
+
+  requestAnimationFrame(() => tip.classList.add('visible'));
+}
+
+function hideTooltipEl(): void {
+  if (activeTooltip) {
+    activeTooltip.remove();
+    activeTooltip = null;
+  }
+}
+
+function toggleTooltip(e: MouseEvent): void {
+  if (activeTooltip) {
+    hideTooltipEl();
+  } else {
+    showTooltip(e);
+  }
+}
+
+// --- Help Panel ---
+
+function showHelp(): void {
+  helpDialog.style.display = '';
+}
+
+function hideHelp(): void {
+  helpDialog.style.display = 'none';
+}
+
 // --- Services Management ---
 
 async function loadServices(userId: string): Promise<void> {
@@ -1685,6 +1821,18 @@ export function initApp(): void {
   serviceRegDialog = document.getElementById('serviceRegDialog') as HTMLElement;
   serviceChallengeDialog = document.getElementById('serviceChallengeDialog') as HTMLElement;
 
+  // Onboarding + help elements
+  onboardingOverlay = document.getElementById('onboardingOverlay') as HTMLElement;
+  onboardingSteps = document.querySelectorAll<HTMLElement>('.onboarding-step');
+  onboardingDots = document.querySelectorAll<HTMLElement>('.onboarding-dot');
+  onboardingBackBtn = document.getElementById('onboardingBack') as HTMLButtonElement;
+  onboardingNextBtn = document.getElementById('onboardingNext') as HTMLButtonElement;
+  onboardingDoneBtn = document.getElementById('onboardingDone') as HTMLButtonElement;
+  onboardingDismissCheck = document.getElementById('onboardingDismiss') as HTMLInputElement;
+  helpBtn = document.getElementById('helpBtn') as HTMLButtonElement;
+  helpDialog = document.getElementById('helpDialog') as HTMLElement;
+  helpCloseBtn = document.getElementById('helpClose') as HTMLButtonElement;
+
   pianoCtx = pianoCanvas.getContext('2d')!;
   visCtx = visCanvas.getContext('2d')!;
   fingerprintCtx = fingerprintCanvas.getContext('2d')!;
@@ -1750,6 +1898,17 @@ export function initApp(): void {
   // Protocol server event listeners
   setupProtocolListeners();
 
+  // Onboarding + help listeners
+  onboardingNextBtn.addEventListener('click', onboardingNext);
+  onboardingBackBtn.addEventListener('click', onboardingBack);
+  onboardingDoneBtn.addEventListener('click', hideOnboarding);
+  helpBtn.addEventListener('click', showHelp);
+  helpCloseBtn.addEventListener('click', hideHelp);
+
+  // Setup tooltips
+  setupTooltips();
+
   refreshUserList();
+  checkShowOnboarding();
   animate();
 }
