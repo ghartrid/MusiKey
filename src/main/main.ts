@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog, screen } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, screen, session } = require('electron');
 import * as path from 'path';
 import * as fs from 'fs';
 import * as nodeCrypto from 'crypto';
@@ -82,6 +82,13 @@ function createWindow(): void {
 }
 
 app.whenReady().then(() => {
+  // Grant MIDI device access permission (required with sandbox: true)
+  session.defaultSession.setPermissionRequestHandler(
+    (_webContents: any, permission: string, callback: (granted: boolean) => void) => {
+      callback(permission === 'midi');
+    }
+  );
+
   createWindow();
   if (mainWindow) startProtocolServer(mainWindow);
 

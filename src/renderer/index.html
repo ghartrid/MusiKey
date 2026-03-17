@@ -44,10 +44,23 @@
         </div>
       </div>
 
+      <div class="midi-controls" id="midiControls" style="display:none;">
+        <div class="input-group small">
+          <label for="midiDevice">MIDI Device</label>
+          <select id="midiDevice"><option value="">No devices found</option></select>
+        </div>
+        <div class="midi-record-row">
+          <button id="midiRecordBtn" class="btn btn-accent btn-small">Record</button>
+          <span class="midi-note-count" id="midiNoteCount">0 notes</span>
+          <span class="midi-recording-dot" id="midiRecDot" style="display:none;"></span>
+        </div>
+      </div>
+
       <div class="button-row">
         <button id="enrollBtn" class="btn btn-primary">Enroll</button>
         <button id="authBtn" class="btn btn-accent">Authenticate</button>
         <button id="playBtn" class="btn btn-secondary">Play</button>
+        <button id="midiBtn" class="btn btn-secondary">MIDI</button>
       </div>
     </section>
 

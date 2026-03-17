@@ -960,3 +960,45 @@ canvas {
   border-top: none;
   border-bottom: 5px solid #0f3460;
 }
+
+/* MIDI controls */
+.midi-controls {
+  margin-top: 4px;
+  padding: 8px 0;
+  border-top: 1px solid #16213e;
+}
+
+.midi-record-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 6px;
+}
+
+.midi-note-count {
+  font-size: 12px;
+  color: #888;
+  font-variant-numeric: tabular-nums;
+}
+
+.midi-recording-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #e94560;
+  animation: midi-pulse 1s ease-in-out infinite;
+}
+
+@keyframes midi-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+
+.midi-controls .input-group {
+  margin-bottom: 0;
+}
+
+#midiBtn.active {
+  background: #e94560;
+  color: #fff;
+}

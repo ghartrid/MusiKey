@@ -6,6 +6,8 @@ import { generateSong } from '../core/song';
 import { scramble, descramble, reencrypt } from '../core/crypto';
 import { analyze } from '../core/analysis';
 import { calculateEntropy } from '../core/entropy';
+import { MidiManager } from '../core/midi';
+import { SCALE_INTERVALS } from '../core/scales';
 import { MusikeyPlayer } from '../audio/player';
 import { highlightNote, updatePiano, renderPiano, resetPiano } from './piano';
 import { triggerNote, updateVisualizer, renderVisualizer, pulseSuccess, shakeFailure, randomize, resetVisualizer } from './visualizer';
@@ -45,7 +47,7 @@ declare global {
   }
 }
 
-type AppState = 'idle' | 'enrolling' | 'authenticating' | 'playing' | 'success' | 'failure' | 'locked' | 'cooldown';
+type AppState = 'idle' | 'enrolling' | 'authenticating' | 'playing' | 'success' | 'failure' | 'locked' | 'cooldown' | 'midi-recording';
 
 function escapeHtml(str: string): string {
   return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -145,6 +147,18 @@ const ONBOARDING_TOTAL_STEPS = 5;
 const ONBOARDING_DISMISSED_KEY = 'musikey_onboarding_dismissed';
 let activeTooltip: HTMLElement | null = null;
 
+// MIDI input
+let midiManager: MidiManager | null = null;
+let midiMode = false;
+let midiBtn: HTMLButtonElement;
+let midiControls: HTMLElement;
+let midiDeviceSelect: HTMLSelectElement;
+let midiRecordBtn: HTMLButtonElement;
+let midiNoteCount: HTMLSpanElement;
+let midiRecDot: HTMLElement;
+let midiAudioCtx: AudioContext | null = null;
+let settingsRow: HTMLElement;
+
 // Passphrase strength checker
 interface StrengthResult {
   score: number; // 0-4
@@ -235,6 +249,402 @@ async function verifyIntegrity(cred: MusikeyCredential): Promise<boolean> {
   if (!cred.integrityHash) return true; // Legacy credential
   const expected = await computeIntegrityHash(cred);
   return constantTimeCompare(cred.integrityHash, expected);
+}
+
+// --- MIDI helpers ---
+
+/** Play a short sine tone for real-time MIDI feedback */
+function playMidiNote(note: number, velocity: number): void {
+  if (!midiAudioCtx) midiAudioCtx = new AudioContext();
+  if (midiAudioCtx.state === 'suspended') midiAudioCtx.resume();
+  const freq = 440 * Math.pow(2, (note - 69) / 12);
+  const osc = midiAudioCtx.createOscillator();
+  const gain = midiAudioCtx.createGain();
+  const amp = (velocity / 127) * 0.2;
+  osc.type = 'sine';
+  osc.frequency.value = freq;
+  const now = midiAudioCtx.currentTime;
+  gain.gain.setValueAtTime(0, now);
+  gain.gain.linearRampToValueAtTime(amp, now + 0.01);
+  gain.gain.linearRampToValueAtTime(0, now + 0.3);
+  osc.connect(gain).connect(midiAudioCtx.destination);
+  osc.start(now);
+  osc.stop(now + 0.3);
+}
+
+/** Detect the best-matching scale from pitch classes in recorded events */
+function detectScale(events: import('../core/types').MusikeyEvent[]): { scale: MusikeyScale; rootNote: number } {
+  // Count pitch class frequencies
+  const pcCounts = new Array(12).fill(0);
+  for (const e of events) {
+    pcCounts[e.note % 12]++;
+  }
+
+  // Root note = most frequent pitch class
+  let rootNote = 0;
+  let maxCount = 0;
+  for (let i = 0; i < 12; i++) {
+    if (pcCounts[i] > maxCount) {
+      maxCount = pcCounts[i];
+      rootNote = i;
+    }
+  }
+
+  // Score each scale by how many notes fit
+  let bestScale = MusikeyScale.CHROMATIC;
+  let bestScore = 0;
+
+  for (const scaleKey of [
+    MusikeyScale.PENTATONIC, MusikeyScale.MAJOR, MusikeyScale.MINOR,
+    MusikeyScale.BLUES, MusikeyScale.DORIAN, MusikeyScale.MIXOLYDIAN,
+  ]) {
+    const intervals = SCALE_INTERVALS[scaleKey];
+    let matched = 0;
+    let total = 0;
+    for (let pc = 0; pc < 12; pc++) {
+      if (pcCounts[pc] === 0) continue;
+      total += pcCounts[pc];
+      const relative = ((pc - rootNote) % 12 + 12) % 12;
+      if (intervals.includes(relative)) {
+        matched += pcCounts[pc];
+      }
+    }
+    const score = total > 0 ? matched / total : 0;
+    if (score > bestScore) {
+      bestScore = score;
+      bestScale = scaleKey;
+    }
+  }
+
+  // Only use detected scale if >= 70% of notes fit; otherwise chromatic
+  if (bestScore < 0.7) bestScale = MusikeyScale.CHROMATIC;
+
+  return { scale: bestScale, rootNote };
+}
+
+/** Estimate tempo from median inter-note interval */
+function detectTempo(events: import('../core/types').MusikeyEvent[]): number {
+  if (events.length < 2) return 120;
+  const intervals: number[] = [];
+  for (let i = 1; i < events.length; i++) {
+    const gap = events[i].timestamp - events[i - 1].timestamp;
+    if (gap > 0) intervals.push(gap);
+  }
+  if (intervals.length === 0) return 120;
+  intervals.sort((a, b) => a - b);
+  const median = intervals[Math.floor(intervals.length / 2)];
+  // Convert median inter-note interval (ms) to BPM
+  const bpm = Math.round(60000 / median);
+  return Math.max(40, Math.min(200, bpm));
+}
+
+/** Build a MusikeySong from MIDI-recorded events */
+function buildSongFromMidi(events: import('../core/types').MusikeyEvent[]): MusikeySong {
+  const { scale, rootNote } = detectScale(events);
+  const tempo = detectTempo(events);
+
+  // Cap individual durations to uint16 max (65535ms)
+  for (const e of events) {
+    if (e.duration > 65535) e.duration = 65535;
+  }
+
+  // Normalize timestamps to fit uint16 range (0-65535) if total exceeds it.
+  // The crypto pipeline serializes timestamps as uint16 — overflow would silently
+  // wrap, corrupting playback after decrypt.
+  // Use actual max end time across all events (polyphonic notes may overlap).
+  let maxEndTime = 0;
+  for (const e of events) {
+    const end = e.timestamp + e.duration;
+    if (end > maxEndTime) maxEndTime = end;
+  }
+
+  if (maxEndTime > 65535 && events.length > 0) {
+    const timeScale = 65535 / maxEndTime;
+    for (const e of events) {
+      e.timestamp = Math.round(e.timestamp * timeScale);
+      e.duration = Math.max(10, Math.round(e.duration * timeScale));
+    }
+  }
+
+  let totalDuration = 0;
+  for (const e of events) {
+    const end = e.timestamp + e.duration;
+    if (end > totalDuration) totalDuration = end;
+  }
+
+  const song: MusikeySong = {
+    events,
+    eventCount: events.length,
+    totalDuration,
+    scale,
+    rootNote,
+    tempo,
+    entropyBits: 0,
+  };
+  song.entropyBits = calculateEntropy(song);
+  return song;
+}
+
+async function toggleMidiMode(): Promise<void> {
+  if (state !== 'idle' && state !== 'success' && state !== 'failure') return;
+
+  if (!midiMode) {
+    // Activate MIDI mode
+    if (!midiManager) {
+      midiManager = new MidiManager();
+      const ok = await midiManager.init();
+      if (!ok) {
+        setStatus('MIDI access denied or unavailable', '#ff6b6b');
+        return;
+      }
+    }
+
+    // Populate device list
+    const devices = midiManager.getInputs();
+    midiDeviceSelect.innerHTML = '';
+    if (devices.length === 0) {
+      const opt = document.createElement('option');
+      opt.value = '';
+      opt.textContent = 'No MIDI devices found';
+      midiDeviceSelect.appendChild(opt);
+    } else {
+      for (const d of devices) {
+        const opt = document.createElement('option');
+        opt.value = d.id;
+        opt.textContent = d.name;
+        midiDeviceSelect.appendChild(opt);
+      }
+      // Auto-select first device
+      midiManager.selectInput(devices[0].id);
+    }
+
+    midiMode = true;
+    midiControls.style.display = '';
+    settingsRow.style.display = 'none';
+    midiBtn.classList.add('active');
+    setStatus('MIDI mode — select device and click Record', '#e94560');
+  } else {
+    // Deactivate MIDI mode
+    if (midiManager?.isRecording) {
+      midiManager.stopRecording();
+    }
+    if (midiAudioCtx) {
+      midiAudioCtx.close().catch(() => {});
+      midiAudioCtx = null;
+    }
+    midiMode = false;
+    midiControls.style.display = 'none';
+    settingsRow.style.display = '';
+    midiBtn.classList.remove('active');
+    midiRecordBtn.textContent = 'Record';
+    midiRecDot.style.display = 'none';
+    midiNoteCount.textContent = '0 notes';
+    setStatus('Ready', '#ececec');
+  }
+}
+
+async function handleMidiRecord(): Promise<void> {
+  if (!midiManager) return;
+
+  if (!midiManager.isRecording) {
+    // Validate username + passphrase before recording (don't waste user's performance)
+    const username = usernameInput.value.trim();
+    const passphrase = passphraseInput.value;
+    if (!username || !passphrase) {
+      setStatus('Enter username and passphrase before recording', '#ff6b6b');
+      return;
+    }
+    const strength = checkPassphraseStrength(passphrase);
+    if (!strength.ok) {
+      setStatus('Passphrase too weak — need 12+ chars, 3+ categories', '#ff6b6b');
+      return;
+    }
+
+    // Check device selection
+    const deviceId = midiDeviceSelect.value;
+    if (!deviceId) {
+      setStatus('No MIDI device selected', '#ff6b6b');
+      return;
+    }
+    midiManager.selectInput(deviceId);
+
+    // Set up callbacks
+    midiManager.onNote = (note, velocity) => {
+      highlightNote(note);
+      playMidiNote(note, velocity);
+      // Update counter immediately on note-on (includes held notes)
+      const total = midiManager!.noteCount;
+      const min = 32;
+      midiNoteCount.textContent = `${total} note${total !== 1 ? 's' : ''}${total < min ? ` (min ${min})` : ''}`;
+    };
+    midiManager.onEventCaptured = (count) => {
+      const min = 32;
+      midiNoteCount.textContent = `${count} note${count !== 1 ? 's' : ''}${count < min ? ` (min ${min})` : ''}`;
+    };
+
+    midiManager.startRecording();
+    state = 'midi-recording';
+    midiRecordBtn.textContent = 'Stop';
+    midiRecDot.style.display = '';
+    midiNoteCount.textContent = '0 notes (min 32)';
+    setButtonsEnabled(false);
+    midiRecordBtn.disabled = false;
+    setStatus('Recording MIDI — play your melody...', '#e94560');
+  } else {
+    // Stop recording and process
+    const events = midiManager.stopRecording();
+    midiRecordBtn.textContent = 'Record';
+    midiRecDot.style.display = 'none';
+    state = 'idle';
+
+    if (events.length < 32) {
+      setStatus(`Need at least 32 notes (got ${events.length})`, '#ff6b6b');
+      setButtonsEnabled(true);
+      return;
+    }
+
+    // Build song from MIDI events
+    const song = buildSongFromMidi(events);
+
+    if (song.entropyBits < 40) {
+      setStatus(`Insufficient entropy (${song.entropyBits} bits, need 40+). Try more varied notes.`, '#ff6b6b');
+      setButtonsEnabled(true);
+      return;
+    }
+
+    const a = analyze(song, config.musicalityThreshold);
+    if (!a.isValidMusic) {
+      setStatus('Recording failed musicality check. Try a more melodic performance.', '#ff6b6b');
+      setButtonsEnabled(true);
+      return;
+    }
+
+    // All checks passed — proceed with enrollment
+    await doMidiEnroll(song, a);
+  }
+}
+
+async function doMidiEnroll(song: MusikeySong, a: MusikeyAnalysis): Promise<void> {
+  const username = usernameInput.value.trim();
+  const passphrase = passphraseInput.value;
+  if (!username || !passphrase) {
+    setStatus('Enter username and passphrase', '#ff6b6b');
+    setButtonsEnabled(true);
+    return;
+  }
+
+  const strength = checkPassphraseStrength(passphrase);
+  if (!strength.ok) {
+    setStatus('Passphrase too weak — need 12+ chars, 3+ categories', '#ff6b6b');
+    setButtonsEnabled(true);
+    return;
+  }
+
+  state = 'enrolling';
+  setStatus('PBKDF2 → Argon2id → double AES-256-GCM...', '#e94560');
+  await new Promise(r => setTimeout(r, 100));
+
+  const { scrambled, error } = await scramble(song, passphrase, config.scrambleIterations);
+  if (error !== MusikeyError.OK) {
+    setStatus('Encryption failed', '#ff6b6b');
+    shakeFailure();
+    state = 'failure';
+    setButtonsEnabled(true);
+    return;
+  }
+
+  const mfaConfig: any = {};
+  if (mfaChallengeCheck.checked) mfaConfig.challengeResponse = true;
+  if (mfaTotpCheck.checked) mfaConfig.totp = true;
+  const hasMfa = Object.keys(mfaConfig).length > 0;
+
+  const credential: MusikeyCredential = {
+    userId: username,
+    scrambledSong: scrambled,
+    scale: song.scale,
+    rootNote: song.rootNote,
+    createdTimestamp: Date.now(),
+    lastAuthTimestamp: 0,
+    lastFailedTimestamp: 0,
+    authAttempts: 0,
+    failedAttempts: 0,
+    locked: false,
+    version: 3,
+    integrityHash: '',
+    keyVersion: 1,
+    authLevel: getAuthLevel(),
+    mfa: hasMfa ? mfaConfig : undefined,
+  };
+
+  // ZKP commitment
+  const songBuf = new ArrayBuffer(song.eventCount * 6);
+  const songView = new DataView(songBuf);
+  for (let i = 0; i < song.eventCount; i++) {
+    const off = i * 6;
+    songView.setUint8(off, song.events[i].note);
+    songView.setUint8(off + 1, song.events[i].velocity);
+    songView.setUint16(off + 2, song.events[i].duration, true);
+    songView.setUint16(off + 4, song.events[i].timestamp, true);
+  }
+  const songHashBuf = await crypto.subtle.digest('SHA-256', songBuf);
+  credential.zkpCommitment = await createCommitment(songHashBuf);
+
+  // WebAuthn registration
+  setStatus('Generating ECDSA P-256 key pair...', '#e94560');
+  try {
+    const challenge = webauthnChallenge();
+    const { webauthnCredential } = await webauthnRegister(
+      {
+        rp: { id: 'musikey.local', name: 'MusiKey' },
+        user: { id: username, name: username, displayName: username },
+        challenge,
+        pubKeyCredParams: [{ type: 'public-key', alg: -7 }],
+        attestation: 'direct',
+      },
+      passphrase,
+      config.scrambleIterations
+    );
+    credential.webauthn = webauthnCredential;
+    credential.mfa = { ...credential.mfa, webauthnSignature: true };
+  } catch {
+    // Continue without WebAuthn
+  }
+
+  const auditEntry = await createAuditEntry(
+    'registration',
+    credential.webauthn?.rpId || 'musikey.local',
+    credential.webauthn?.credentialId || username,
+    username,
+    0,
+    'MIDI enrollment'
+  );
+  appendAuditEntry(credential, auditEntry);
+
+  credential.integrityHash = await computeIntegrityHash(credential);
+  await window.musikeyStore.saveCredential(credential);
+  await refreshUserList();
+
+  lastSong = song;
+  setAnalysis(a);
+  entropyEl.textContent = String(song.entropyBits);
+  attemptsEl.textContent = '0 / ' + config.maxFailedAttempts;
+
+  await showFingerprint(song, fingerprintCanvas, fingerprintCtx);
+
+  if (mfaTotpCheck.checked && lastSongHash) {
+    startTotpDisplay();
+    mfaSection.style.display = '';
+  }
+
+  setStatus(`Enrolled "${username}" via MIDI — PBKDF2+Argon2id + double AES-GCM`, '#4ecca3');
+  pulseSuccess();
+  state = 'success';
+  setButtonsEnabled(true);
+
+  passphraseInput.value = '';
+  updateStrengthMeter();
+  scheduleSongClear();
+  playCurrentSong();
 }
 
 function setStatus(message: string, color: string = '#ececec'): void {
@@ -523,6 +933,10 @@ async function runMfaChecks(credential: MusikeyCredential, song: MusikeySong): P
 }
 
 async function doEnroll(): Promise<void> {
+  if (midiMode) {
+    setStatus('In MIDI mode — use Record to capture your melody', '#ff6b6b');
+    return;
+  }
   const username = usernameInput.value.trim();
   const passphrase = passphraseInput.value;
   if (!username || !passphrase) {
@@ -1171,6 +1585,7 @@ async function doDelete(): Promise<void> {
 function setButtonsEnabled(enabled: boolean): void {
   enrollBtn.disabled = !enabled;
   authBtn.disabled = !enabled;
+  midiBtn.disabled = !enabled;
   exportBtn.disabled = !enabled;
   importBtn.disabled = !enabled;
   deleteBtn.disabled = !enabled;
@@ -1847,6 +2262,15 @@ export function initApp(): void {
   serviceRegDialog = document.getElementById('serviceRegDialog') as HTMLElement;
   serviceChallengeDialog = document.getElementById('serviceChallengeDialog') as HTMLElement;
 
+  // MIDI elements
+  midiBtn = document.getElementById('midiBtn') as HTMLButtonElement;
+  midiControls = document.getElementById('midiControls') as HTMLElement;
+  midiDeviceSelect = document.getElementById('midiDevice') as HTMLSelectElement;
+  midiRecordBtn = document.getElementById('midiRecordBtn') as HTMLButtonElement;
+  midiNoteCount = document.getElementById('midiNoteCount') as HTMLSpanElement;
+  midiRecDot = document.getElementById('midiRecDot') as HTMLElement;
+  settingsRow = document.querySelector('.input-row.settings') as HTMLElement;
+
   // Onboarding + help elements
   onboardingOverlay = document.getElementById('onboardingOverlay') as HTMLElement;
   onboardingSteps = document.querySelectorAll<HTMLElement>('.onboarding-step');
@@ -1881,6 +2305,13 @@ export function initApp(): void {
   enrollBtn.addEventListener('click', doEnroll);
   authBtn.addEventListener('click', doAuthenticate);
   playBtn.addEventListener('click', playCurrentSong);
+  midiBtn.addEventListener('click', toggleMidiMode);
+  midiRecordBtn.addEventListener('click', handleMidiRecord);
+  midiDeviceSelect.addEventListener('change', () => {
+    if (midiManager && midiDeviceSelect.value) {
+      midiManager.selectInput(midiDeviceSelect.value);
+    }
+  });
   exportBtn.addEventListener('click', doExport);
   importBtn.addEventListener('click', doImport);
   deleteBtn.addEventListener('click', doDelete);
