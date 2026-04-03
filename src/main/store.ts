@@ -212,14 +212,29 @@ export function getCredential(userId: string): any | null {
 }
 
 export function saveCredential(credential: any): void {
+  if (typeof credential.userId !== 'string' || credential.userId.length === 0 || credential.userId.length > 256) {
+    throw new Error('Invalid credential userId');
+  }
   const store = readStore();
 
-  // Self-destruct: if max failures reached and locked, wipe the credential entirely
+  // Self-destruct: only allow if the credential already existed in the store with a locked state
+  // This prevents a compromised renderer from injecting _selfDestruct to wipe arbitrary credentials
   if (credential.failedAttempts >= 5 && credential.locked && credential._selfDestruct) {
-    secureWipeCredential(store, credential.userId);
-    writeStore(store);
-    return;
+    const existing = store.credentials[credential.userId];
+    if (existing && existing.locked && existing.failedAttempts >= 5) {
+      secureWipeCredential(store, credential.userId);
+      writeStore(store);
+      return;
+    }
+    // Reject self-destruct if existing credential isn't actually locked
+    delete credential._selfDestruct;
   }
+
+  // Sanitize security-critical fields: clamp failedAttempts to prevent injection
+  if (typeof credential.failedAttempts !== 'number' || credential.failedAttempts < 0) {
+    credential.failedAttempts = 0;
+  }
+  credential.failedAttempts = Math.min(credential.failedAttempts, 10);
 
   credential._hmac = computeHmac(credential);
   store.credentials[credential.userId] = credential;
@@ -254,6 +269,9 @@ export function exportCredential(userId: string): string | null {
 
 export function importCredential(jsonString: string): boolean {
   try {
+    // Reject oversized imports (max 1MB — a credential should never be this large)
+    if (jsonString.length > 1024 * 1024) return false;
+
     const cred = JSON.parse(jsonString);
     // Schema validation: require essential fields and correct types
     if (typeof cred.userId !== 'string' || cred.userId.length === 0 || cred.userId.length > 256) return false;
@@ -262,6 +280,11 @@ export function importCredential(jsonString: string): boolean {
     if (typeof cred.scrambledSong.salt !== 'string') return false;
     if (typeof cred.scrambledSong.iv !== 'string') return false;
     if (typeof cred.scrambledSong.authTag !== 'string') return false;
+    // Size limits on encrypted blob fields (base64 of reasonable crypto payloads)
+    if (cred.scrambledSong.scrambledData.length > 65536) return false;
+    if (cred.scrambledSong.salt.length > 256) return false;
+    if (cred.scrambledSong.iv.length > 256) return false;
+    if (cred.scrambledSong.authTag.length > 256) return false;
     // Strip dangerous internal fields
     cred.failedAttempts = 0;
     cred.locked = false;

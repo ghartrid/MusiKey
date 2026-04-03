@@ -6,6 +6,9 @@ import * as http from 'http';
 
 const PORT = 9817;
 const MAX_BODY_SIZE = 16 * 1024; // 16 KB
+const MAX_PENDING_REQUESTS = 5; // Rate limit: max concurrent pending approval requests
+const RATE_WINDOW_MS = 60000; // 1 minute
+const MAX_REQUESTS_PER_WINDOW = 20; // Max requests per IP per window
 
 let server: http.Server | null = null;
 let mainWindow: any = null;
@@ -16,6 +19,27 @@ const pendingRequests = new Map<string, {
   resolve: (value: any) => void;
   timeout: ReturnType<typeof setTimeout>;
 }>();
+
+// Simple per-IP rate limiter
+const rateLimitMap = new Map<string, { count: number; resetAt: number }>();
+
+function checkRateLimit(ip: string): boolean {
+  const now = Date.now();
+  const entry = rateLimitMap.get(ip);
+  if (!entry || now > entry.resetAt) {
+    rateLimitMap.set(ip, { count: 1, resetAt: now + RATE_WINDOW_MS });
+    return true;
+  }
+  entry.count++;
+  return entry.count <= MAX_REQUESTS_PER_WINDOW;
+}
+
+function assertBodyString(val: unknown, name: string, maxLen: number = 1024): string {
+  if (typeof val !== 'string' || val.length === 0 || val.length > maxLen) {
+    throw new Error(`Invalid ${name}`);
+  }
+  return val;
+}
 
 // Only allow CORS from localhost origins (same machine, different ports)
 function getAllowedOrigin(req: http.IncomingMessage): string | null {
@@ -82,6 +106,12 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
   }
 
   try {
+    // Rate limiting
+    const clientIp = req.socket.remoteAddress || 'unknown';
+    if (!checkRateLimit(clientIp)) {
+      return json(res, 429, { error: 'Too many requests' }, req);
+    }
+
     // GET /status — health check
     if (method === 'GET' && urlPath === '/status') {
       return json(res, 200, { protocol: 'musikey-v1', ready: true, port: PORT }, req);
@@ -93,8 +123,17 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
         return json(res, 503, { error: 'MusiKey not ready' }, req);
       }
 
+      // Reject if too many pending requests (prevents dialog flood)
+      if (pendingRequests.size >= MAX_PENDING_REQUESTS) {
+        return json(res, 429, { error: 'Too many pending requests' }, req);
+      }
+
       const body = JSON.parse(await readBody(req));
-      if (!body.rpId || !body.challenge) {
+      // Validate field types and lengths
+      try {
+        assertBodyString(body.rpId, 'rpId', 512);
+        assertBodyString(body.challenge, 'challenge', 512);
+      } catch {
         return json(res, 400, { error: 'rpId and challenge required' }, req);
       }
 
@@ -139,8 +178,17 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
         return json(res, 503, { error: 'MusiKey not ready' }, req);
       }
 
+      // Reject if too many pending requests (prevents dialog flood)
+      if (pendingRequests.size >= MAX_PENDING_REQUESTS) {
+        return json(res, 429, { error: 'Too many pending requests' }, req);
+      }
+
       const body = JSON.parse(await readBody(req));
-      if (!body.rpId || !body.serviceName) {
+      // Validate field types and lengths
+      try {
+        assertBodyString(body.rpId, 'rpId', 512);
+        assertBodyString(body.serviceName, 'serviceName', 512);
+      } catch {
         return json(res, 400, { error: 'rpId and serviceName required' }, req);
       }
 
@@ -179,8 +227,9 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
     }
 
     json(res, 404, { error: 'Not found' }, req);
-  } catch (err: any) {
-    json(res, 500, { error: err.message || 'Internal error' }, req);
+  } catch {
+    // Never expose internal error details to callers
+    json(res, 500, { error: 'Internal error' }, req);
   }
 }
 

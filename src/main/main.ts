@@ -136,7 +136,16 @@ ipcMain.handle('store:removeService', (_e: any, userId: unknown, serviceId: unkn
 
 // Cascaded KDF: PBKDF2 (600k) → Argon2id (128MB, t=3) → 32-byte key
 // Argon2id is memory-hard + GPU/ASIC resistant (winner of Password Hashing Competition)
-ipcMain.handle('crypto:cascadedKDF', async (_e: any, passphrase: string, saltB64: string, pbkdf2Iterations: number) => {
+ipcMain.handle('crypto:cascadedKDF', async (_e: any, passphrase: unknown, saltB64: unknown, pbkdf2Iterations: unknown) => {
+  if (typeof passphrase !== 'string' || passphrase.length === 0 || passphrase.length > 4096) {
+    throw new Error('Invalid passphrase');
+  }
+  if (typeof saltB64 !== 'string' || saltB64.length === 0 || saltB64.length > 256) {
+    throw new Error('Invalid salt');
+  }
+  if (typeof pbkdf2Iterations !== 'number' || !Number.isInteger(pbkdf2Iterations) || pbkdf2Iterations < 100000 || pbkdf2Iterations > 2000000) {
+    throw new Error('Invalid iterations');
+  }
   const salt = Buffer.from(saltB64, 'base64');
   const peppered = pepperPassphrase(passphrase);
 
@@ -163,7 +172,16 @@ ipcMain.handle('crypto:cascadedKDF', async (_e: any, passphrase: string, saltB64
 });
 
 // Legacy cascaded KDF: PBKDF2 → scrypt (for v2 credential migration)
-ipcMain.handle('crypto:legacyCascadedKDF', async (_e: any, passphrase: string, saltB64: string, pbkdf2Iterations: number) => {
+ipcMain.handle('crypto:legacyCascadedKDF', async (_e: any, passphrase: unknown, saltB64: unknown, pbkdf2Iterations: unknown) => {
+  if (typeof passphrase !== 'string' || passphrase.length === 0 || passphrase.length > 4096) {
+    throw new Error('Invalid passphrase');
+  }
+  if (typeof saltB64 !== 'string' || saltB64.length === 0 || saltB64.length > 256) {
+    throw new Error('Invalid salt');
+  }
+  if (typeof pbkdf2Iterations !== 'number' || !Number.isInteger(pbkdf2Iterations) || pbkdf2Iterations < 100000 || pbkdf2Iterations > 2000000) {
+    throw new Error('Invalid iterations');
+  }
   const salt = Buffer.from(saltB64, 'base64');
 
   // Stage 1: PBKDF2-SHA256 (NO pepper — must match original v2 encryption)

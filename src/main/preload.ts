@@ -18,9 +18,15 @@ contextBridge.exposeInMainWorld('musikeyStore', {
   getServices: (userId: string) => ipcRenderer.invoke('store:getServices', userId),
   saveService: (userId: string, service: any) => ipcRenderer.invoke('store:saveService', userId, service),
   removeService: (userId: string, serviceId: string) => ipcRenderer.invoke('store:removeService', userId, serviceId),
-  // Protocol server events
-  onProtocolChallenge: (callback: (data: any) => void) => ipcRenderer.on('protocol:challenge-received', (_e: any, data: any) => callback(data)),
-  onProtocolRegister: (callback: (data: any) => void) => ipcRenderer.on('protocol:register-request', (_e: any, data: any) => callback(data)),
+  // Protocol server events — removeAllListeners before adding to prevent listener leak
+  onProtocolChallenge: (callback: (data: any) => void) => {
+    ipcRenderer.removeAllListeners('protocol:challenge-received');
+    ipcRenderer.on('protocol:challenge-received', (_e: any, data: any) => callback(data));
+  },
+  onProtocolRegister: (callback: (data: any) => void) => {
+    ipcRenderer.removeAllListeners('protocol:register-request');
+    ipcRenderer.on('protocol:register-request', (_e: any, data: any) => callback(data));
+  },
   sendProtocolChallengeResponse: (data: any) => ipcRenderer.send('protocol:challenge-response', data),
   sendProtocolRegisterResponse: (data: any) => ipcRenderer.send('protocol:register-response', data),
 });

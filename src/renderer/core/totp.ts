@@ -52,16 +52,29 @@ export async function generateTOTP(songHashB64: string, timeOverride?: number): 
   return code.toString().padStart(TOTP_DIGITS, '0');
 }
 
+// Constant-time string comparison to prevent timing side-channel attacks on TOTP codes
+function constantTimeEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) {
+    diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  }
+  return diff === 0;
+}
+
 export async function verifyTOTP(songHashB64: string, userCode: string): Promise<boolean> {
   const now = Math.floor(Date.now() / 1000);
+  const paddedCode = userCode.padStart(TOTP_DIGITS, '0');
+  // Check all windows and accumulate result to avoid early-exit timing leak
+  let valid = false;
   for (let i = -TOTP_WINDOW; i <= TOTP_WINDOW; i++) {
     const time = now + i * TOTP_PERIOD;
     const expected = await generateTOTP(songHashB64, time);
-    if (expected === userCode.padStart(TOTP_DIGITS, '0')) {
-      return true;
+    if (constantTimeEqual(expected, paddedCode)) {
+      valid = true;
     }
   }
-  return false;
+  return valid;
 }
 
 export function getTimeRemaining(): number {
