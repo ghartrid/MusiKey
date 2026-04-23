@@ -50,7 +50,7 @@ declare global {
 type AppState = 'idle' | 'enrolling' | 'authenticating' | 'playing' | 'success' | 'failure' | 'locked' | 'cooldown' | 'midi-recording';
 
 function escapeHtml(str: string): string {
-  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 
 let config: MusikeyConfig = { ...DEFAULT_CONFIG };
@@ -1471,7 +1471,7 @@ async function showAuditDialog(): Promise<void> {
     html += `<div style="margin-bottom:4px;font-size:11px;">
       <span style="color:${color};font-weight:600;">${escapeHtml(entry.action)}</span>
       <span style="color:#666;margin-left:6px;">${escapeHtml(date)}</span>
-      ${entry.signCount !== undefined ? `<span style="color:#666;margin-left:6px;">sig#${entry.signCount}</span>` : ''}
+      ${entry.signCount !== undefined ? `<span style="color:#666;margin-left:6px;">sig#${escapeHtml(String(entry.signCount))}</span>` : ''}
       ${entry.detail ? `<div style="color:#555;font-size:10px;margin-left:8px;">${escapeHtml(entry.detail)}</div>` : ''}
     </div>`;
   }
